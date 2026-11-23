@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificar Código | RexMarket</title>
+    {% load static %}
+    <link rel="icon" type="image/x-icon" href="{% static 'img/rexmarket.png' %}" />
+
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'css/verify.css' %}">
+</head>
+<body class="bg-light verify-body">
+
+    <a href="{% url 'login' %}" class="btn-back text-decoration-none">
+        <i class="bi bi-arrow-left-short"></i> Volver al Login
+    </a>
+
+    <div class="container min-vh-100 d-flex align-items-center justify-content-center py-5">
+        <div class="card verify-card shadow-lg border-0 overflow-hidden" style="max-width: 450px; width: 100%;">
+            
+            <div class="card-body p-5 text-center">
+                
+                <div class="icon-circle mx-auto mb-4 d-flex align-items-center justify-content-center text-white">
+                    <i class="bi bi-envelope-check-fill display-4"></i>
+                </div>
+
+                <h2 class="fw-bold text-dark mb-2">Verifica tu correo</h2>
+                <p class="text-muted mb-3 small">
+                    Enviamos un código de seguridad a <strong>{{ user_email|default:"tu correo institucional" }}</strong>.
+                </p>
+
+                <!-- Indicador en vivo de validez (15 minutos) -->
+                <div class="mb-3">
+                    <span id="expiration-badge" class="badge bg-light text-dark border px-3 py-2 rounded-pill">
+                        <i class="bi bi-clock-history text-primary me-1"></i>
+                        Expira en: <strong id="expiration-timer">15:00</strong>
+                    </span>
+                </div>
+
+                <!-- Contenedor para alertas dinámicas AJAX -->
+                <div id="ajax-alert-container"></div>
+
+                <!-- Mensajes y Alertas de Django -->
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show border-0 shadow-sm text-start small" role="alert">
+                            {% if message.tags == 'error' or message.tags == 'danger' %}
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            {% elif message.tags == 'success' %}
+                                <i class="bi bi-check-circle-fill me-2"></i>
+                            {% else %}
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                            {% endif %}
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                <!-- Formulario de Verificación -->
+                <form method="post" class="needs-validation mt-2">
+                    {% csrf_token %}
+                    
+                    <div class="form-group mb-4">
+                        <input 
+                            type="text" 
+                            name="verification_code" 
+                            class="form-control form-control-lg text-center fw-bold text-uppercase letter-spacing-custom" 
+                            placeholder="Ej: A7K9P2" 
+                            required 
+                            autocomplete="off"
+                            maxlength="6"
+                            autofocus
+                        >
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 btn-lg rounded-pill fw-bold shadow-sm verify-btn">
+                        Verificar Código <i class="bi bi-shield-check ms-2"></i>
+                    </button>
+                </form>
+
+            </div>
+            
+            <!-- Pie de tarjeta para reenviar código en tiempo real -->
+            <div class="card-footer bg-light border-0 py-3 text-center">
+                <p class="text-muted small mb-1">
+                    ¿No recibiste el código?
+                    <button 
+                        type="button" 
+                        id="btn-resend-code" 
+                        class="btn btn-link btn-sm p-0 fw-bold text-decoration-none align-baseline"
+                        {% if cooldown_seconds > 0 or resends_remaining <= 0 %}disabled{% endif %}
+                    >
+                        {% if resends_remaining <= 0 %}
+                            Sin reenvíos disponibles
+                        {% elif cooldown_seconds > 0 %}
+                            Reenviar en {{ cooldown_seconds }}s
+                        {% else %}
+                            Reenviar código
+                        {% endif %}
+                    </button>
+                </p>
+                <small id="resends-left-text" class="text-muted d-block" style="font-size: 0.75rem;">
+                    Reenvíos disponibles: <span id="resends-remaining">{{ resends_remaining|default:3 }}</span> de 3
+                </small>
+            </div>
+            
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnResend = document.getElementById('btn-resend-code');
+            const alertContainer = document.getElementById('ajax-alert-container');
+            const resendsRemainingEl = document.getElementById('resends-remaining');
+            const expTimerEl = document.getElementById('expiration-timer');
+            const expBadgeEl = document.getElementById('expiration-badge');
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            let cooldown = Number("{{ cooldown_seconds|default:0 }}");
+            let resendsRemaining = Number("{{ resends_remaining|default:3 }}");
+            let expirationSeconds = Number("{{ segundos_expiracion|default:900 }}");
+
+            function showAlert(type, text) {
+                const icon = type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill';
+                alertContainer.innerHTML = `
+                    <div class="alert alert-${type} alert-dismissible fade show border-0 shadow-sm text-start small" role="alert">
+                        <i class="bi ${icon} me-2"></i>${text}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                `;
+            }
+
+            // Temporizador de expiración de 15 minutos
+            function updateExpirationDisplay() {
+                if (expirationSeconds <= 0) {
+                    expTimerEl.textContent = 'Expirado';
+                    expBadgeEl.classList.remove('bg-light', 'text-dark');
+                    expBadgeEl.classList.add('bg-danger-subtle', 'text-danger', 'border-danger-subtle');
+                    return;
+                }
+                const mins = String(Math.floor(expirationSeconds / 60)).padStart(2, '0');
+                const secs = String(expirationSeconds % 60).padStart(2, '0');
+                expTimerEl.textContent = `${mins}:${secs}`;
+                expBadgeEl.classList.remove('bg-danger-subtle', 'text-danger', 'border-danger-subtle');
+                expBadgeEl.classList.add('bg-light', 'text-dark');
+            }
+
+            updateExpirationDisplay();
+            setInterval(() => {
+                if (expirationSeconds > 0) {
+                    expirationSeconds--;
+                    updateExpirationDisplay();
+                }
+            }, 1000);
+
+            // Temporizador de cooldown de 30 segundos para reenvío
+            function startCooldownTimer(seconds) {
+                cooldown = seconds;
+                btnResend.disabled = true;
+
+                const interval = setInterval(() => {
+                    if (resendsRemaining <= 0) {
+                        btnResend.textContent = 'Sin reenvíos disponibles';
+                        btnResend.disabled = true;
+                        clearInterval(interval);
+                        return;
+                    }
+
+                    if (cooldown > 0) {
+                        btnResend.textContent = `Reenviar en ${cooldown}s`;
+                        cooldown--;
+                    } else {
+                        btnResend.textContent = 'Reenviar código';
+                        btnResend.disabled = false;
+                        clearInterval(interval);
+                    }
+                }, 1000);
+            }
+
+            if (cooldown > 0 && resendsRemaining > 0) {
+                startCooldownTimer(cooldown);
+            }
+
+            btnResend.addEventListener('click', async () => {
+                if (btnResend.disabled || resendsRemaining <= 0) return;
+
+                btnResend.disabled = true;
+                btnResend.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
+
+                try {
+                    const response = await fetch("{% url 'resend_verification_code' %}", {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        showAlert('success', data.message);
+                        resendsRemaining = data.resends_remaining;
+                        resendsRemainingEl.textContent = resendsRemaining;
+                        expirationSeconds = data.segundos_expiracion || 900;
+                        updateExpirationDisplay();
+
+                        if (resendsRemaining > 0) {
+                            startCooldownTimer(data.cooldown || 30);
+                        } else {
+                            btnResend.textContent = 'Sin reenvíos disponibles';
+                            btnResend.disabled = true;
+                        }
+                    } else {
+                        showAlert('danger', data.message || 'No se pudo reenviar el código.');
+                        if (typeof data.resends_remaining === 'number') {
+                            resendsRemaining = data.resends_remaining;
+                            resendsRemainingEl.textContent = resendsRemaining;
+                        }
+                        if (data.cooldown && data.cooldown > 0) {
+                            startCooldownTimer(data.cooldown);
+                        } else if (resendsRemaining > 0) {
+                            btnResend.textContent = 'Reenviar código';
+                            btnResend.disabled = false;
+                        } else {
+                            btnResend.textContent = 'Sin reenvíos disponibles';
+                        }
+                    }
+                } catch (error) {
+                    showAlert('danger', 'Error de conexión al intentar reenviar el código.');
+                    btnResend.textContent = 'Reenviar código';
+                    btnResend.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

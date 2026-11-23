@@ -1,0 +1,426 @@
+{% extends 'base/base.html' %}
+
+{% block titulo %}
+    Reportes de Mensajes | Administración
+{% endblock %}
+
+{% block contenido %}
+
+<!-- CSS y JS de DataTables -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+
+<style>
+    body { background-color: #f8f9fa; }
+    .mensaje-celda { max-width: 260px; word-wrap: break-word; white-space: pre-wrap; font-style: italic; }
+    .nav-admin-pills .nav-link { color: #495057; font-weight: 600; border-radius: 50rem; transition: all 0.2s ease; }
+    .nav-admin-pills .nav-link:hover { background-color: #fff3e6; color: #ff8c00; }
+    .nav-admin-pills .nav-link.active { background-color: #ff8c00 !important; color: #fff !important; }
+    .card-admin-estatica,
+    .card-admin-estatica:hover {
+        transform: none !important;
+        overflow: visible !important;
+    }
+</style>
+
+<div class="container-fluid px-4 py-4 mb-5">
+
+    <!-- Encabezado y Estado WebSocket -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-1"><i class="bi bi-shield-exclamation text-danger me-2"></i>Gestión de Reportes de Mensajes</h2>
+            <p class="text-muted mb-0 small">Alertas automáticas de moderación IA y denuncias directas en chats.</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span id="ws-status" class="badge bg-secondary px-3 py-2">
+                <i class="bi bi-circle-fill me-1"></i>Conectando tiempo real...
+            </span>
+        </div>
+    </div>
+
+    <!-- Navegación Rápida entre Módulos de Moderación -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <ul class="nav nav-pills nav-admin-pills bg-white p-2 rounded-pill shadow-sm border flex-wrap gap-1">
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'lista_reportes' %}active{% endif %}" href="{% url 'lista_reportes' %}">
+                    <i class="bi bi-tag-fill me-1"></i>Productos
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'reportes_comentarios' %}active{% endif %}" href="{% url 'reportes_comentarios' %}">
+                    <i class="bi bi-chat-left-quote-fill me-1"></i>Comentarios
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'lista_reportes_mensajes' %}active{% endif %}" href="{% url 'lista_reportes_mensajes' %}">
+                    <i class="bi bi-shield-exclamation me-1"></i>Mensajes / IA
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'monitor_pedidos_admin' %}active{% endif %}" href="{% url 'monitor_pedidos_admin' %}">
+                    <i class="bi bi-truck me-1"></i>Pedidos y Disputas
+                </a>
+            </li>
+            {% if request.user.is_superuser %}
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'gestion_usuarios' %}active{% endif %}" href="{% url 'gestion_usuarios' %}">
+                    <i class="bi bi-people-fill me-1"></i>Usuarios
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'bitacora_auditoria_admin' %}active{% endif %}" href="{% url 'bitacora_auditoria_admin' %}">
+                    <i class="bi bi-journal-check me-1"></i>Bitácora Auditoría
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+
+        <div class="d-flex gap-2">
+            <div class="bg-white px-3 py-2 rounded-3 shadow-sm border d-flex align-items-center gap-2">
+                <span class="text-muted small fw-bold">Pendientes:</span>
+                <span id="contador-pendientes" class="badge bg-danger fs-6">{{ reportes_pendientes|length }}</span>
+            </div>
+            <div class="bg-white px-3 py-2 rounded-3 shadow-sm border d-flex align-items-center gap-2">
+                <span class="text-muted small fw-bold">Resueltos:</span>
+                <span id="contador-resueltos" class="badge bg-success fs-6">{{ reportes_resueltos|length }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA 1: REPORTES PENDIENTES -->
+    <h4 class="text-danger fw-bold mb-3"><i class="bi bi-exclamation-triangle-fill me-2"></i>Reportes Pendientes</h4>
+    <div class="card card-admin-estatica shadow-sm border-0 mb-5 border-top border-danger border-3 rounded-3">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="tabla-pendientes" class="table table-hover table-striped table-bordered align-middle w-100">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Gravedad</th>
+                            <th>Denunciante</th>
+                            <th>Reportado</th>
+                            <th>Mensaje Reportado</th>
+                            <th>Motivo</th>
+                            <th>Fecha</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reporte in reportes_pendientes %}
+                        <tr id="reporte-row-{{ reporte.id }}">
+                            <td class="fw-bold">#{{ reporte.id }}</td>
+                            <td>
+                                {% if reporte.tipo_alerta == 'ROJA' %}
+                                    <span class="badge bg-danger"><i class="bi bi-shield-x me-1"></i>Roja</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Amarilla</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><strong>Nombre:</strong> {{ reporte.reporter.first_name }} {{ reporte.reporter.last_name }}</li>
+                                    <li><strong>RUT:</strong> {{ reporte.reporter.username|default:"No registrado" }}</li>
+                                </ul>
+                            </td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><strong>Nombre:</strong> {{ reporte.message.sender.first_name }} {{ reporte.message.sender.last_name }}</li>
+                                    <li><strong>RUT:</strong> {{ reporte.message.sender.username|default:"No registrado" }}</li>
+                                </ul>
+                            </td>
+                            <td class="mensaje-celda"><div class="p-2 bg-light border rounded small">"{{ reporte.message.content }}"</div></td>
+                            <td><div class="small">{{ reporte.reason }}</div></td>
+                            <td data-order="{{ reporte.fecha_creacion|date:'Y-m-d H:i:s' }}">{{ reporte.fecha_creacion|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <div class="d-flex gap-2 flex-column">
+                                    <a href="{% url 'conversation_detail' reporte.message.conversation.id %}" target="_blank" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-chat-text me-1"></i>Ver Chat
+                                    </a>
+
+                                    {% if request.user.is_superuser %}
+                                    <a href="{% url 'ver_perfil_admin' reporte.message.sender.id %}" class="btn btn-outline-dark btn-sm">
+                                        <i class="bi bi-person-badge me-1"></i>Revisar Usuario
+                                    </a>
+                                    {% endif %}
+
+                                    <form method="post" action="{% url 'resolver_reporte_mensaje' reporte.id %}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-success btn-sm w-100">
+                                            <i class="bi bi-check-circle me-1"></i>Resolver
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA 2: REPORTES RESUELTOS -->
+    <h4 class="text-success fw-bold mb-3"><i class="bi bi-check-circle-fill me-2"></i>Historial de Reportes Resueltos</h4>
+    <div class="card card-admin-estatica shadow-sm border-0 border-top border-success border-3 rounded-3">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="tabla-resueltos" class="table table-hover table-striped table-bordered align-middle w-100">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Denunciante</th>
+                            <th>Reportado</th>
+                            <th>Mensaje Reportado</th>
+                            <th>Motivo</th>
+                            <th>Fecha</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reporte in reportes_resueltos %}
+                        <tr id="reporte-resuelto-row-{{ reporte.id }}">
+                            <td class="text-muted fw-bold">#{{ reporte.id }}</td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small text-muted">
+                                    <li>{{ reporte.reporter.first_name }} {{ reporte.reporter.last_name }}</li>
+                                    <li>{{ reporte.reporter.username|default:"No registrado" }}</li>
+                                </ul>
+                            </td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small text-muted">
+                                    <li>{{ reporte.message.sender.first_name }} {{ reporte.message.sender.last_name }}</li>
+                                    <li>{{ reporte.message.sender.username|default:"No registrado" }}</li>
+                                </ul>
+                            </td>
+                            <td class="mensaje-celda text-muted"><div class="p-2 bg-light border rounded opacity-75 small">"{{ reporte.message.content }}"</div></td>
+                            <td class="text-muted small">{{ reporte.reason }}</td>
+                            <td class="text-muted" data-order="{{ reporte.fecha_creacion|date:'Y-m-d H:i:s' }}">{{ reporte.fecha_creacion|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <div class="d-flex gap-2 flex-column">
+                                    <a href="{% url 'conversation_detail' reporte.message.conversation.id %}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                                        <i class="bi bi-chat-text me-1"></i>Ver Chat
+                                    </a>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteModal{{ reporte.id }}">
+                                        <i class="bi bi-trash me-1"></i>Eliminar
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modales fuera de la tabla y de .card -->
+{% for reporte in reportes_resueltos %}
+<div class="modal fade" id="deleteModal{{ reporte.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger fw-bold"><i class="bi bi-trash me-2"></i>Eliminar Registro</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">¿Borrar definitivamente este reporte resuelto del sistema?</div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="{% url 'eliminar_reporte_mensaje' reporte.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger fw-bold">Sí, eliminar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Contenedor para Notificaciones Flotantes Toast -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1090;" id="toast-container"></div>
+
+<script>
+    $(document).ready(function () {
+        const esSuperuser = {{ request.user.is_superuser|yesno:"true,false" }};
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        const configIdioma = {
+            "lengthMenu": "Mostrar _MENU_ registros",
+            "zeroRecords": "No se encontraron resultados",
+            "emptyTable": "No hay reportes en esta sección.",
+            "info": "Mostrando _START_ a _END_ de _TOTAL_",
+            "infoEmpty": "Mostrando 0 a 0 de 0",
+            "infoFiltered": "(filtrado de _MAX_ totales)",
+            "search": "Buscar:",
+            "paginate": { "first": "Primero", "last": "Último", "next": "Siguiente", "previous": "Anterior" }
+        };
+
+        const dtPendientes = $('#tabla-pendientes').DataTable({
+            "language": configIdioma,
+            "order": [[6, "desc"]],
+            "stateSave": true
+        });
+
+        const dtResueltos = $('#tabla-resueltos').DataTable({
+            "language": configIdioma,
+            "order": [[5, "desc"]],
+            "stateSave": true
+        });
+
+        function actualizarContadores() {
+            $('#contador-pendientes').text(dtPendientes.rows().count());
+            $('#contador-resueltos').text(dtResueltos.rows().count());
+        }
+
+        function mostrarToastGeneral(titulo, subtitulo, detalle, enlaceUrl, colorHeader, btnCloseWhite = false) {
+            const toastId = `toast-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            const toastHTML = `
+                <div id="${toastId}" class="toast shadow-lg border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="7500">
+                    <div class="toast-header ${colorHeader}">
+                        <i class="bi bi-bell-fill me-2"></i>
+                        <strong class="me-auto">${escapeHtml(titulo)}</strong>
+                        <small>Ahora</small>
+                        <button type="button" class="btn-close ${btnCloseWhite ? 'btn-close-white' : ''}" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="toast-body bg-white">
+                        <p class="mb-1 small"><strong>${escapeHtml(subtitulo)}</strong></p>
+                        <p class="mb-2 small text-muted text-truncate">${escapeHtml(detalle)}</p>
+                        <div class="pt-2 border-top text-end">
+                            <a href="${enlaceUrl}" class="btn btn-sm btn-outline-dark py-0 px-2" onclick="$(this).closest('.toast').toast('hide');">
+                                Ver detalle
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `;
+            $('#toast-container').append(toastHTML);
+            const toastElem = document.getElementById(toastId);
+            const bsToast = new bootstrap.Toast(toastElem);
+            bsToast.show();
+            toastElem.addEventListener('hidden.bs.toast', () => toastElem.remove());
+        }
+
+        // Conexión WebSocket
+        const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const socket = new WebSocket(`${wsScheme}://${window.location.host}/ws/admin/reportes/`);
+
+        socket.onopen = function () {
+            $('#ws-status')
+                .removeClass('bg-secondary bg-danger')
+                .addClass('bg-success')
+                .html('<i class="bi bi-wifi me-1"></i>Tiempo real activo');
+        };
+
+        socket.onclose = function () {
+            $('#ws-status')
+                .removeClass('bg-success bg-secondary')
+                .addClass('bg-danger')
+                .html('<i class="bi bi-wifi-off me-1"></i>Desconectado');
+        };
+
+        socket.onmessage = function (e) {
+            const data = JSON.parse(e.data);
+
+            if (data.tipo === 'NUEVO_REPORTE') {
+                const r = data.reporte;
+                const categoria = data.categoria || 'MENSAJE';
+
+                if (categoria === 'MENSAJE') {
+                    const esRoja = r.tipo_alerta === 'ROJA';
+                    const badgeGravedad = esRoja
+                        ? '<span class="badge bg-danger"><i class="bi bi-shield-x me-1"></i>Roja</span>'
+                        : '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Amarilla</span>';
+
+                    const csrfToken = getCookie('csrftoken') || '';
+                    const btnUsuario = (esSuperuser && r.reported_id)
+                        ? `<a href="/administracion/usuarios/perfil/${r.reported_id}/" class="btn btn-outline-dark btn-sm"><i class="bi bi-person-badge me-1"></i>Revisar Usuario</a>`
+                        : '';
+
+                    const accionesHTML = `
+                        <div class="d-flex gap-2 flex-column">
+                            <a href="/conversations/${r.conversation_id}/" target="_blank" class="btn btn-primary btn-sm"><i class="bi bi-chat-text me-1"></i>Ver Chat</a>
+                            ${btnUsuario}
+                            <form method="post" action="/reportes/mensajes/resolver/${r.id}/">
+                                <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+                                <button type="submit" class="btn btn-success btn-sm w-100"><i class="bi bi-check-circle me-1"></i>Resolver</button>
+                            </form>
+                        </div>`;
+
+                    const rowNode = dtPendientes.row.add([
+                        `#${r.id}`,
+                        badgeGravedad,
+                        `<ul class="list-unstyled mb-0 small"><li><strong>Nombre:</strong> ${escapeHtml(r.reporter_name)}</li><li><strong>RUT:</strong> ${escapeHtml(r.reporter_username)}</li></ul>`,
+                        `<ul class="list-unstyled mb-0 small"><li><strong>Nombre:</strong> ${escapeHtml(r.reported_name)}</li><li><strong>RUT:</strong> ${escapeHtml(r.reported_username)}</li></ul>`,
+                        `<div class="p-2 bg-light border rounded small">"${escapeHtml(r.content)}"</div>`,
+                        `<div class="small">${escapeHtml(r.reason)}</div>`,
+                        { display: r.fecha_display, '@data-order': r.fecha_iso },
+                        accionesHTML
+                    ]).draw(false).node();
+
+                    $(rowNode).attr('id', `reporte-row-${r.id}`);
+                    $(rowNode).find('td').eq(0).addClass('fw-bold');$(rowNode).find('td').eq(4).addClass('mensaje-celda');
+                    actualizarContadores();
+
+                    mostrarToastGeneral(
+                        `Nuevo Reporte de Mensaje (${r.tipo_alerta})`,
+                        `Reportado por: ${r.reporter_name}`,
+                        r.reason,
+                        `#reporte-row-${r.id}`,
+                        esRoja ? 'bg-danger text-white' : 'bg-warning text-dark',
+                        esRoja
+                    );
+                } else if (categoria === 'PRODUCTO') {
+                    mostrarToastGeneral(
+                        'Nuevo Reporte de Producto',
+                        `${r.producto_nombre} (por ${r.reporter_name})`,
+                        r.motivo,
+                        "{% url 'lista_reportes' %}",
+                        'bg-warning text-dark'
+                    );
+                } else if (categoria === 'COMENTARIO') {
+                    mostrarToastGeneral(
+                        'Nuevo Reporte de Comentario',
+                        `En: ${r.producto_nombre}`,
+                        r.motivo,
+                        "{% url 'reportes_comentarios' %}",
+                        'bg-primary text-white',
+                        true
+                    );
+                }
+            }
+
+            if (data.tipo === 'REPORTE_RESUELTO' && (!data.categoria || data.categoria === 'MENSAJE')) {
+                const filaTarget = dtPendientes.row(`#reporte-row-${data.reporte_id}`);
+                if (filaTarget.any()) {
+                    filaTarget.remove().draw(false);
+                    actualizarContadores();
+                }
+            }
+        };
+    });
+</script>
+
+{% endblock %}

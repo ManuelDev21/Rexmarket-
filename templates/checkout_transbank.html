@@ -1,0 +1,74 @@
+{% extends "base/base.html" %}
+
+{% block titulo %}
+Webpay Plus | {% if es_destacado %}Destacar Producto{% else %}Pago de Comisión{% endif %}
+{% endblock %}
+
+{% block contenido %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="p-4 text-white text-center" style="background: linear-gradient(135deg, #2b1055, #7597de);">
+                    <span class="badge bg-warning text-dark mb-2 fw-bold">MODO SIMULACIÓN TRANSBANK</span>
+                    <h3 class="fw-bold mb-0">Webpay Plus</h3>
+                    <small class="opacity-75">Comercio: RexMarket Chile</small>
+                </div>
+
+                <div class="card-body p-4 bg-white">
+                    <div class="bg-light rounded-3 p-3 mb-4 border">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted small">Orden de Compra:</span>
+                            <strong class="small">{{ pago.buy_order }}</strong>
+                        </div>
+
+                        {% if es_destacado %}
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted small">Producto a destacar:</span>
+                                <strong class="small text-truncate" style="max-width: 180px;">{{ pago.producto.nombre }}</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted small">Duración del plan:</span>
+                                <span class="small fw-semibold">{{ pago.dias }} día{{ pago.dias|pluralize }}</span>
+                            </div>
+                            <hr class="my-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-dark">Total Plan Destacado:</span>
+                                <span class="fs-4 fw-bolder text-primary">${{ pago.monto_comision }} CLP</span>
+                            </div>
+                        {% else %}
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted small">Producto a publicar:</span>
+                                <strong class="small text-truncate" style="max-width: 180px;">{{ pago.producto.nombre }}</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted small">Precio publicación:</span>
+                                <span class="small">${{ pago.monto_producto }}</span>
+                            </div>
+                            <hr class="my-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-dark">Comisión RexMarket (2%):</span>
+                                <span class="fs-4 fw-bolder text-primary">${{ pago.monto_comision }} CLP</span>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <form method="POST" action="{% if es_destacado %}{% url 'retorno_pago_destacado' %}{% else %}{% url 'retorno_pago_comision' %}{% endif %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="token_ws" value="{{ pago.token_ws }}">
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" name="resultado_simulado" value="aprobado" class="btn btn-success btn-lg fw-bold rounded-3 shadow-sm">
+                                <i class="bi bi-check-circle-fill me-2"></i>Simular Pago Aprobado
+                            </button>
+                            <button type="submit" name="resultado_simulado" value="rechazado" class="btn btn-outline-danger rounded-3">
+                                <i class="bi bi-x-circle me-2"></i>Simular Pago Rechazado
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

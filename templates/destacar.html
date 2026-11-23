@@ -1,0 +1,153 @@
+{% extends "base/base.html" %}
+
+{% block titulo %}
+Destacar Producto
+{% endblock %}
+
+{% block contenido %}
+
+{% load static %}
+
+<link rel="stylesheet" href="{% static 'css/pricing.css' %}">
+
+<style>
+    .bd-placeholder-img {
+      font-size: 1.125rem;
+      text-anchor: middle;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      user-select: none;
+    }
+
+    @media (min-width: 768px) {
+      .bd-placeholder-img-lg {
+        font-size: 3.5rem;
+      }
+    }
+
+    .b-example-divider {
+      width: 100%;
+      height: 3rem;
+      background-color: rgba(0, 0, 0, .1);
+      border: solid rgba(0, 0, 0, .15);
+      border-width: 1px 0;
+      box-shadow: inset 0 .5em 1.5em rgba(0, 0, 0, .1), inset 0 .125em .5em rgba(0, 0, 0, .15);
+    }
+
+    .b-example-vr {
+      flex-shrink: 0;
+      width: 1.5rem;
+      height: 100vh;
+    }
+
+    .bi {
+      vertical-align: -.125em;
+      fill: currentColor;
+    }
+
+    .nav-scroller {
+      position: relative;
+      z-index: 2;
+      height: 2.75rem;
+      overflow-y: hidden;
+    }
+
+    .nav-scroller .nav {
+      display: flex;
+      flex-wrap: nowrap;
+      padding-bottom: 1rem;
+      margin-top: -1px;
+      overflow-x: auto;
+      text-align: center;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+</style>
+
+  <body>
+    <!-- Símbolos SVG omitidos por brevedad, mantén los que ya tenías en tu código original -->
+
+<div class="container py-3">
+    <header>
+        <div class="pricing-header p-3 pb-md-4 mx-auto text-center">
+            <h1 class="display-4 fw-normal text-body-emphasis">Destacar Producto</h1>
+            <p class="fs-5 text-muted">Elige la mejor opción para vender tu producto más rápido.</p>
+        </div>
+    </header>
+    
+    <main>
+        <div class="row row-cols-1 row-cols-md-3 mb-3 text-center">
+            
+            <!-- PLAN 1 DÍA -->
+            <div class="col">
+                <div class="card mb-4 rounded-3 shadow-sm">
+                    <div class="card-header py-3">
+                        <h4 class="my-0 fw-normal">Básico</h4>
+                    </div>
+                    <div class="card-body">
+                        <h1 class="card-title pricing-card-title">$490<small class="text-body-secondary fw-light">/único</small></h1>
+                        <ul class="list-unstyled mt-3 mb-4 text-start ms-4">
+                            <li><i class="bi bi-check2 text-success me-2"></i>Prioridad en búsquedas</li>
+                            <li><i class="bi bi-check2 text-success me-2"></i>Etiqueta de "Promocionado"</li>
+                            <li><i class="bi bi-check2 text-success me-2"></i>Duración: 1 día</li>
+                        </ul>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="duracion" value="1">
+                            <button type="submit" class="w-100 btn btn-lg btn-outline-primary">Seleccionar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PLAN 3 DÍAS -->
+            <div class="col">
+                <div class="card mb-4 rounded-3 shadow-sm">
+                    <div class="card-header py-3">
+                        <h4 class="my-0 fw-normal">Estándar</h4>
+                    </div>
+                    <div class="card-body">
+                        <h1 class="card-title pricing-card-title">$1490<small class="text-body-secondary fw-light">/único</small></h1>
+                        <ul class="list-unstyled mt-3 mb-4 text-start ms-4">
+                            <li><i class="bi bi-check2 text-success me-2"></i>Prioridad en búsquedas</li>
+                            <li><i class="bi bi-check2 text-success me-2"></i>Etiqueta de "Promocionado"</li>
+                            <li><i class="bi bi-check2 text-success me-2"></i>Duración: 3 días</li>
+                        </ul>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="duracion" value="3">
+                            <button type="submit" class="w-100 btn btn-lg btn-primary">Seleccionar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PLAN 7 DÍAS (VIP CARRUSEL) -->
+            <div class="col">
+                <div class="card mb-4 rounded-3 shadow-sm border-warning">
+                    <div class="card-header py-3 text-bg-warning border-warning">
+                        <h4 class="my-0 fw-bold text-dark"><i class="bi bi-star-fill me-2"></i>VIP Semanal</h4>
+                    </div>
+                    <div class="card-body">
+                        <h1 class="card-title pricing-card-title">$2990<small class="text-body-secondary fw-light">/único</small></h1>
+                        <ul class="list-unstyled mt-3 mb-4 text-start ms-4">
+                            <li><i class="bi bi-star-fill text-warning me-2"></i><strong>Aparición en Carrusel Top</strong></li>
+                            <li><i class="bi bi-check2 text-success me-2"></i>Máxima visibilidad en inicio</li>
+                            <li><i class="bi bi-check2 text-success me-2"></i>Duración: 7 días</li>
+                        </ul>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="duracion" value="7">
+                            <button type="submit" class="w-100 btn btn-lg btn-warning fw-bold">Seleccionar VIP</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<script src="../assets/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends 'base/base.html' %}
+
+{% block titulo %}
+    Bitácora de Auditoría | Administración
+{% endblock %}
+
+{% block contenido %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+
+<style>
+    body { background-color: #f8f9fa; }
+    .nav-admin-pills .nav-link { color: #495057; font-weight: 600; border-radius: 50rem; }
+    .nav-admin-pills .nav-link.active { background-color: #ff8c00; color: #fff; }
+</style>
+
+<div class="container-fluid px-4 py-4 mb-5">
+
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-1"><i class="bi bi-journal-check text-success me-2"></i>Bitácora de Auditoría Administrativa</h2>
+            <p class="text-muted mb-0 small">Registro histórico e inmutable de sanciones, mediaciones y moderación como respaldo ante apelaciones.</p>
+        </div>
+    </div>
+
+    <!-- Navegación Unificada -->
+    <ul class="nav nav-pills nav-admin-pills bg-white p-2 rounded-pill shadow-sm border mb-4 d-inline-flex flex-wrap gap-1">
+        <li class="nav-item"><a class="nav-link" href="{% url 'lista_reportes' %}"><i class="bi bi-tag-fill me-1"></i>Productos</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'reportes_comentarios' %}"><i class="bi bi-chat-left-quote-fill me-1"></i>Comentarios</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'lista_reportes_mensajes' %}"><i class="bi bi-shield-exclamation me-1"></i>Mensajes / IA</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'monitor_pedidos_admin' %}"><i class="bi bi-truck me-1"></i>Pedidos y Disputas</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'gestion_usuarios' %}"><i class="bi bi-people-fill me-1"></i>Usuarios</a></li>
+        <li class="nav-item"><a class="nav-link active" href="{% url 'bitacora_auditoria_admin' %}"><i class="bi bi-journal-check me-1"></i>Bitácora Auditoría</a></li>
+    </ul>
+
+    <!-- Filtro por Tipo de Acción -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-3">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-muted mb-1">Filtrar por Tipo de Intervención</label>
+                    <select name="accion" class="form-select form-select-sm">
+                        <option value="">Todas las acciones registradas</option>
+                        {% for cod, etiqueta in acciones_choices %}
+                            <option value="{{ cod }}" {% if accion_seleccionada == cod %}selected{% endif %}>{{ etiqueta }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-dark btn-sm fw-bold px-3"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+                    <a href="{% url 'bitacora_auditoria_admin' %}" class="btn btn-outline-secondary btn-sm">Ver Todo</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tabla de Auditoría -->
+    <div class="card border-0 shadow-sm border-top border-success border-3 rounded-3">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="tabla-auditoria" class="table table-hover table-striped table-bordered align-middle w-100">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Fecha y Hora</th>
+                            <th>Responsable (Actor)</th>
+                            <th>Tipo de Acción</th>
+                            <th>Usuario Afectado</th>
+                            <th>Detalle y Respaldo</th>
+                            <th>IP Origen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reg in registros %}
+                        <tr>
+                            <td class="fw-bold">#{{ reg.id }}</td>
+                            <td data-order="{{ reg.fecha|date:'Y-m-d H:i:s' }}">{{ reg.fecha|date:"d/m/Y H:i:s" }}</td>
+                            <td>
+                                {% if reg.administrador %}
+                                    <span class="badge bg-dark"><i class="bi bi-person-shield me-1"></i>{{ reg.administrador.username }}</span>
+                                    <div class="small text-muted">{{ reg.administrador.first_name }} {{ reg.administrador.last_name }}</div>
+                                {% else %}
+                                    <span class="badge bg-secondary"><i class="bi bi-cpu me-1"></i>SISTEMA AUTO</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if 'SUSPENSION' in reg.accion or 'ELIMINACION' in reg.accion %}
+                                    <span class="badge bg-danger">{{ reg.get_accion_display }}</span>
+                                {% elif 'ADVERTENCIA' in reg.accion or 'PENALIZACION' in reg.accion or 'INTERVENCION' in reg.accion %}
+                                    <span class="badge bg-warning text-dark">{{ reg.get_accion_display }}</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ reg.get_accion_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if reg.usuario_afectado %}
+                                    <div class="small fw-bold">{{ reg.usuario_afectado.first_name }} {{ reg.usuario_afectado.last_name }}</div>
+                                    <div class="small text-muted">{{ reg.usuario_afectado.username }}</div>
+                                {% else %}
+                                    <span class="text-muted small">No aplica / Eliminado</span>
+                                {% endif %}
+                            </td>
+                            <td style="max-width: 340px; white-space: pre-wrap;">
+                                <div class="small">{{ reg.detalle }}</div>
+                            </td>
+                            <td><code class="small">{{ reg.ip_origen|default:"Interno" }}</code></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(document).ready(function () {
+        $('#tabla-auditoria').DataTable({
+            "language": {
+                "lengthMenu": "Mostrar _MENU_ registros",
+                "zeroRecords": "No se encontraron registros",
+                "emptyTable": "Aún no hay intervenciones registradas.",
+                "info": "Mostrando _START_ a _END_ de _TOTAL_",
+                "infoEmpty": "Mostrando 0 a 0 de 0",
+                "search": "Buscar:",
+                "paginate": { "first": "Primero", "last": "Último", "next": "Siguiente", "previous": "Anterior" }
+            },
+            "order": [[1, "desc"]],
+            "stateSave": true
+        });
+    });
+</script>
+{% endblock %}

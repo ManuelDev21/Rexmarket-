@@ -1,0 +1,495 @@
+{% extends "base/base.html" %}
+
+{% block titulo %}Analítica y Ventas | RexMarket{% endblock %}
+
+{% block contenido %}
+<!-- DataTables y Chart.js -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+    body { background-color: #f8f9fa; }
+    .kpi-card { transition: transform 0.15s ease; }
+    .kpi-card:hover { transform: translateY(-2px); }
+    .filter-pill.active { background-color: #198754 !important; color: #fff !important; border-color: #198754 !important; }
+    table.dataTable thead th { cursor: pointer; user-select: none; }
+</style>
+
+<div class="container-fluid px-4 py-4 mb-5">
+
+    <!-- ENCABEZADO -->
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 gap-3">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                <h2 class="fw-bold mb-0"><i class="bi bi-graph-up-arrow text-success me-2"></i>Analítica y Rendimiento Nacional</h2>
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2">
+                    {{ etiqueta_periodo }}
+                </span>
+            </div>
+            <p class="text-muted mb-0 small">Métricas de rotación, conversión por sede/categoría y recaudación por comisiones Transbank (2%).</p>
+        </div>
+
+        {% if sede_seleccionada or periodo_seleccionado != 'todo' or mes_seleccionado or anio_seleccionado %}
+        <div>
+            <a href="{% url 'estadisticas_admin' %}" class="btn btn-outline-secondary btn-sm fw-semibold bg-white shadow-sm">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Limpiar filtros
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- BARRA DE FILTROS TEMPORALES Y POR SEDE -->
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-body py-3">
+            <form method="get" id="form-filtros" class="row g-3 align-items-end">
+                <!-- Botones rápidos de período -->
+                <div class="col-lg-5">
+                    <label class="form-label small fw-bold text-muted mb-1">Filtro Rápido por Período</label>
+                    <div class="btn-group w-100 shadow-sm" role="group">
+                        <a href="?sede={{ sede_seleccionada }}&periodo=semana"
+                           class="btn btn-outline-secondary btn-sm fw-semibold filter-pill {% if periodo_seleccionado == 'semana' %}active{% endif %}">
+                            Esta Semana
+                        </a>
+                        <a href="?sede={{ sede_seleccionada }}&periodo=mes"
+                           class="btn btn-outline-secondary btn-sm fw-semibold filter-pill {% if periodo_seleccionado == 'mes' %}active{% endif %}">
+                            Este Mes
+                        </a>
+                        <a href="?sede={{ sede_seleccionada }}&periodo=anio"
+                           class="btn btn-outline-secondary btn-sm fw-semibold filter-pill {% if periodo_seleccionado == 'anio' %}active{% endif %}">
+                            Este Año
+                        </a>
+                        <a href="?sede={{ sede_seleccionada }}&periodo=todo"
+                           class="btn btn-outline-secondary btn-sm fw-semibold filter-pill {% if periodo_seleccionado == 'todo' %}active{% endif %}">
+                            Todo
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Mes específico -->
+                <div class="col-sm-4 col-lg-2">
+                    <label class="form-label small fw-bold text-muted mb-1">Mes Específico</label>
+                    <select name="mes" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Todos los meses</option>
+                        {% for num, nombre in meses_opciones %}
+                            <option value="{{ num }}" {% if mes_seleccionado == num %}selected{% endif %}>{{ nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Año específico -->
+                <div class="col-sm-4 col-lg-2">
+                    <label class="form-label small fw-bold text-muted mb-1">Año</label>
+                    <select name="anio" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Todos los años</option>
+                        {% for a in anios_disponibles %}
+                            <option value="{{ a }}" {% if anio_seleccionado == a|stringformat:"s" %}selected{% endif %}>{{ a }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Sede INACAP -->
+                <div class="col-sm-4 col-lg-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Sede INACAP</label>
+                    <select name="sede" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Todas las Sedes (Nacional)</option>
+                        {% for s in sedes_activas %}
+                            <option value="{{ s.id }}" {% if sede_seleccionada == s.id|stringformat:"s" %}selected{% endif %}>
+                                {{ s.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TARJETAS KPI -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-4 border-success kpi-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small fw-bold text-uppercase">Productos Vendidos</span>
+                        <i class="bi bi-bag-check-fill text-success fs-5"></i>
+                    </div>
+                    <div class="display-6 fw-bolder text-dark my-1">{{ total_vendidos }}</div>
+                    <div class="small text-success">
+                        Conversión: <strong>{{ tasa_conversion }}%</strong>
+                        <span class="text-muted">({{ total_publicados }} publicados)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-4 border-primary kpi-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small fw-bold text-uppercase">Tiempo Prom. Venta</span>
+                        <i class="bi bi-stopwatch-fill text-primary fs-5"></i>
+                    </div>
+                    <div class="fs-3 fw-bolder text-dark my-2">{{ tiempo_promedio_texto }}</div>
+                    <div class="small text-muted">Desde publicación hasta entrega</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-4 border-warning kpi-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small fw-bold text-uppercase">Ingresos Comisión (2%)</span>
+                        <i class="bi bi-cash-coin text-warning fs-5"></i>
+                    </div>
+                    <div class="display-6 fw-bolder text-dark my-1 formato-clp" data-valor="{{ total_comisiones }}">${{ total_comisiones }}</div>
+                    <div class="small text-muted">
+                        Ticket prom. comisión: <strong class="formato-clp" data-valor="{{ ticket_promedio_comision }}">${{ ticket_promedio_comision }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 border-start border-4 border-info kpi-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small fw-bold text-uppercase">Volumen Transado</span>
+                        <i class="bi bi-wallet2 text-info fs-5"></i>
+                    </div>
+                    <div class="display-6 fw-bolder text-dark my-1 formato-clp" data-valor="{{ volumen_transado }}">${{ volumen_transado }}</div>
+                    <div class="small text-muted">Publicaciones activas: <strong>{{ total_activos }}</strong></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GRÁFICOS INTERACTIVOS -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm rounded-4 h-100">
+                <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0"><i class="bi bi-bar-chart-line-fill text-success me-2"></i>Evolución de Comisiones y Ventas</h5>
+                    <span class="badge bg-light text-dark border">{{ etiqueta_periodo }}</span>
+                </div>
+                <div class="card-body px-4 pb-4">
+                    <div style="height: 270px;">
+                        <canvas id="graficoEvolucion"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm rounded-4 h-100">
+                <div class="card-header bg-white border-0 pt-4 px-4">
+                    <h5 class="fw-bold mb-0"><i class="bi bi-pie-chart-fill text-primary me-2"></i>Top Categorías Vendidas</h5>
+                </div>
+                <div class="card-body px-4 pb-4 d-flex align-items-center justify-content-center">
+                    <div style="height: 270px; width: 100%;">
+                        <canvas id="graficoCategorias"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA 1: RANKING POR SEDES INACAP -->
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+            <div>
+                <h5 class="fw-bold mb-0"><i class="bi bi-building text-danger me-2"></i>Actividad y Ranking por Sede INACAP</h5>
+                <small class="text-muted">Ordena por más vendidas, menos vendidas o recaudación haciendo clic en los botones o encabezados.</small>
+            </div>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-dark" onclick="ordenarTabla('#tabla-sedes', 3, 'desc')">
+                    <i class="bi bi-sort-numeric-down-alt me-1"></i>Más vendidas
+                </button>
+                <button type="button" class="btn btn-outline-dark" onclick="ordenarTabla('#tabla-sedes', 3, 'asc')">
+                    <i class="bi bi-sort-numeric-up me-1"></i>Menos vendidas
+                </button>
+                <button type="button" class="btn btn-outline-success" onclick="ordenarTabla('#tabla-sedes', 6, 'desc')">
+                    <i class="bi bi-currency-dollar me-1"></i>Mayor comisión
+                </button>
+            </div>
+        </div>
+        <div class="card-body px-4 pb-4">
+            <div class="table-responsive">
+                <table id="tabla-sedes" class="table table-hover align-middle w-100">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Sede INACAP</th>
+                            <th class="text-center">Publicados</th>
+                            <th class="text-center">Activos</th>
+                            <th class="text-center">Vendidos</th>
+                            <th class="text-center">Tasa Venta</th>
+                            <th class="text-end">Volumen Transado</th>
+                            <th class="text-end">Comisiones (2%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sede in ranking_sedes %}
+                        <tr>
+                            <td class="fw-semibold">{{ sede.nombre }}</td>
+                            <td class="text-center" data-order="{{ sede.publicados }}">{{ sede.publicados }}</td>
+                            <td class="text-center" data-order="{{ sede.activos }}">
+                                <span class="badge bg-info-subtle text-dark border">{{ sede.activos }}</span>
+                            </td>
+                            <td class="text-center" data-order="{{ sede.vendidos }}">
+                                <span class="badge bg-success fs-6">{{ sede.vendidos }}</span>
+                            </td>
+                            <td class="text-center" data-order="{{ sede.tasa_conversion }}">
+                                <div class="d-flex align-items-center justify-content-center gap-2">
+                                    <div class="progress flex-grow-1" style="height: 6px; max-width: 70px;">
+                                        <div class="progress-bar bg-success" style="width: {{ sede.tasa_conversion }}%;"></div>
+                                    </div>
+                                    <span class="small fw-bold">{{ sede.tasa_conversion }}%</span>
+                                </div>
+                            </td>
+                            <td class="text-end text-muted formato-clp" data-order="{{ sede.volumen|default:0 }}" data-valor="{{ sede.volumen|default:0 }}">
+                                ${{ sede.volumen|default:0 }}
+                            </td>
+                            <td class="text-end fw-bold text-dark formato-clp" data-order="{{ sede.recaudado|default:0 }}" data-valor="{{ sede.recaudado|default:0 }}">
+                                ${{ sede.recaudado|default:0 }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA 2: RENDIMIENTO POR CATEGORÍA -->
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+            <div>
+                <h5 class="fw-bold mb-0"><i class="bi bi-tags-fill text-warning me-2"></i>Rendimiento por Categoría</h5>
+                <small class="text-muted">Identifica las categorías con mayor rotación y las que tienen menor salida.</small>
+            </div>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-dark" onclick="ordenarTabla('#tabla-categorias', 3, 'desc')">
+                    Más vendidas
+                </button>
+                <button type="button" class="btn btn-outline-dark" onclick="ordenarTabla('#tabla-categorias', 3, 'asc')">
+                    Menos vendidas
+                </button>
+            </div>
+        </div>
+        <div class="card-body px-4 pb-4">
+            <div class="table-responsive">
+                <table id="tabla-categorias" class="table table-hover align-middle w-100">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Categoría</th>
+                            <th class="text-center">Publicados</th>
+                            <th class="text-center">En Vitrina</th>
+                            <th class="text-center">Vendidos</th>
+                            <th class="text-center">Conversión</th>
+                            <th class="text-end">Comisiones Generadas</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cat in ranking_categorias %}
+                        <tr>
+                            <td class="fw-semibold">{{ cat.nombre_legible }}</td>
+                            <td class="text-center" data-order="{{ cat.publicados }}">{{ cat.publicados }}</td>
+                            <td class="text-center" data-order="{{ cat.activos }}">{{ cat.activos }}</td>
+                            <td class="text-center" data-order="{{ cat.vendidos }}">
+                                <span class="badge bg-primary">{{ cat.vendidos }}</span>
+                            </td>
+                            <td class="text-center" data-order="{{ cat.tasa_conversion }}">
+                                <span class="fw-bold small">{{ cat.tasa_conversion }}%</span>
+                            </td>
+                            <td class="text-end fw-bold text-success formato-clp" data-order="{{ cat.recaudado|default:0 }}" data-valor="{{ cat.recaudado|default:0 }}">
+                                ${{ cat.recaudado|default:0 }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA 3: HISTORIAL DE COMISIONES WEBPAY (2%) -->
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-header bg-white border-0 pt-4 px-4">
+            <h5 class="fw-bold mb-0"><i class="bi bi-receipt text-primary me-2"></i>Historial de Comisiones Webpay Plus (2%)</h5>
+            <small class="text-muted">Busca por orden, estudiante, sede o producto, y ordena por monto o fecha.</small>
+        </div>
+        <div class="card-body px-4 pb-4">
+            <div class="table-responsive">
+                <table id="tabla-comisiones" class="table table-hover align-middle small w-100">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Orden Webpay</th>
+                            <th>Producto</th>
+                            <th>Vendedor</th>
+                            <th>Sede</th>
+                            <th>Estado</th>
+                            <th class="text-end">Valor Producto</th>
+                            <th class="text-end">Comisión (2%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pago in ultimas_comisiones %}
+                        <tr>
+                            <td data-order="{{ pago.fecha_pago|date:'Y-m-d H:i:s' }}">
+                                {{ pago.fecha_pago|date:"d/m/Y H:i" }}
+                            </td>
+                            <td class="text-muted font-monospace">{{ pago.buy_order }}</td>
+                            <td class="fw-semibold">{{ pago.producto.nombre }}</td>
+                            <td>{{ pago.vendedor.first_name }} {{ pago.vendedor.last_name }}</td>
+                            <td>{{ pago.producto.sede.nombre|default:"-" }}</td>
+                            <td>
+                                {% if pago.producto.vendido %}
+                                    <span class="badge bg-success">Vendido</span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark border">Activo</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-muted formato-clp" data-order="{{ pago.monto_producto }}" data-valor="{{ pago.monto_producto }}">
+                                ${{ pago.monto_producto }}
+                            </td>
+                            <td class="text-end fw-bold text-success formato-clp" data-order="{{ pago.monto_comision }}" data-valor="{{ pago.monto_comision }}">
+                                +${{ pago.monto_comision }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{{ chart_data|json_script:"chart-data" }}
+
+<script>
+    function ordenarTabla(selector, columnaIdx, direccion) {
+        const tabla = $(selector).DataTable();
+        tabla.order([columnaIdx, direccion]).draw();
+    }
+
+    $(document).ready(function () {
+        // Formatear montos CLP con separador de miles
+        document.querySelectorAll('.formato-clp').forEach(el => {
+            const raw = Number(el.dataset.valor || 0);
+            const prefix = el.textContent.trim().startsWith('+') ? '+$' : '$';
+            el.textContent = prefix + raw.toLocaleString('es-CL');
+        });
+
+        // Configuración DataTables en español
+        const idiomaDT = {
+            "lengthMenu": "Mostrar _MENU_ registros",
+            "zeroRecords": "No se encontraron resultados",
+            "emptyTable": "No hay datos disponibles para este período.",
+            "info": "Mostrando _START_ a _END_ de _TOTAL_",
+            "infoEmpty": "Mostrando 0 de 0",
+            "infoFiltered": "(filtrado de _MAX_ totales)",
+            "search": "Buscar:",
+            "paginate": { "first": "Primero", "last": "Último", "next": "Siguiente", "previous": "Anterior" }
+        };
+
+        $('#tabla-sedes').DataTable({
+            language: idiomaDT,
+            order: [[3, 'desc']],
+            pageLength: 10
+        });
+
+        $('#tabla-categorias').DataTable({
+            language: idiomaDT,
+            order: [[3, 'desc']],
+            pageLength: 10
+        });
+
+        $('#tabla-comisiones').DataTable({
+            language: idiomaDT,
+            order: [[0, 'desc']],
+            pageLength: 10
+        });
+
+        // Renderizado de Gráficos Chart.js
+        const rawChart = JSON.parse(document.getElementById('chart-data').textContent);
+
+        const ctxEvo = document.getElementById('graficoEvolucion');
+        if (ctxEvo) {
+            new Chart(ctxEvo, {
+                type: 'bar',
+                data: {
+                    labels: rawChart.labels.length ? rawChart.labels : ['Sin datos'],
+                    datasets: [
+                        {
+                            label: 'Comisiones ($ CLP)',
+                            data: rawChart.comisiones.length ? rawChart.comisiones : [0],
+                            backgroundColor: 'rgba(25, 135, 84, 0.75)',
+                            borderColor: 'rgba(25, 135, 84, 1)',
+                            borderWidth: 1,
+                            borderRadius: 6,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Productos Vendidos',
+                            data: rawChart.ventas.length ? rawChart.ventas : [0],
+                            type: 'line',
+                            borderColor: '#0d6efd',
+                            backgroundColor: '#0d6efd',
+                            tension: 0.3,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            ticks: {
+                                callback: val => '$' + val.toLocaleString('es-CL')
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false },
+                            ticks: { precision: 0 }
+                        }
+                    }
+                }
+            });
+        }
+
+        const ctxCat = document.getElementById('graficoCategorias');
+        if (ctxCat) {
+            new Chart(ctxCat, {
+                type: 'doughnut',
+                data: {
+                    labels: rawChart.cat_labels.length ? rawChart.cat_labels : ['Sin ventas'],
+                    datasets: [{
+                        data: rawChart.cat_vendidos.length ? rawChart.cat_vendidos : [1],
+                        backgroundColor: ['#198754', '#0d6efd', '#ffc107', '#dc3545', '#6f42c1', '#20c997'],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

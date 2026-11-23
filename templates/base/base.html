@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>{% block titulo %}RexMarket{% endblock %}</title>
+    
+    {% load static %}
+
+    {% load webpush_notifications %}
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static 'img/rexmarket.png' %}" />
+    
+    <!-- Bootstrap 5 & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+
+    <!-- aplicacion web -->
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+<meta name="theme-color" content="#0d6efd">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+{% webpush_header %}
+</head>
+
+<!-- El d-flex flex-column min-vh-100 asegura que el footer siempre quede al final -->
+<body class="d-flex flex-column min-vh-100 bg-light">
+    
+    <!-- NAVIGATION BAR -->
+    <nav class="navbar navbar-expand-lg custom-navbar sticky-top shadow-sm py-2">
+    <div class="container">
+        <!-- Logo -->
+        <a href="{% url 'home' %}" class="navbar-brand d-flex align-items-center transition-all hover-lift">
+            <img src="{% static 'img/rexmarket.png' %}" alt="RexMarket Logo" class="brand-logo me-2">
+            <span class="text-white fw-bold fs-4 d-none d-sm-block" style="letter-spacing: -0.5px;">RexMarket</span>
+        </a>
+
+        <!-- Botón Menú Móvil -->
+        <button class="navbar-toggler border-0 shadow-none text-white" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+            <i class="bi bi-list fs-1"></i>
+        </button>
+
+        <!-- Contenido Colapsable Navbar -->
+        <div class="collapse navbar-collapse" id="navbarContent">
+            
+            <!-- Buscador y Filtros Separados -->
+            <form class="d-flex mx-lg-auto my-3 my-lg-0 search-form gap-2" method="get" action="{% url 'home' %}">
+                
+                <!-- Barra de búsqueda -->
+                <div class="input-group shadow-sm bg-white rounded-pill overflow-hidden flex-grow-1">
+                    <span class="input-group-text bg-white border-0 text-muted ps-3"><i class="bi bi-search"></i></span>
+                    <input class="form-control border-0 shadow-none bg-white py-2" type="search" name="q" value="{{ query|default:'' }}" placeholder="Buscar productos..." aria-label="Search" id="barra-busqueda">
+                </div>
+                
+                <!-- Botón de Filtros -->
+                <div class="dropdown">
+                    <button class="btn btn-light bg-white shadow-sm rounded-pill d-flex align-items-center h-100 px-3 text-muted hover-lift border-0" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" title="Filtros">
+                        <i class="bi bi-funnel-fill"></i>
+                    </button>
+                    
+                    <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 mt-3 p-3 rounded-4" style="min-width: 260px;">
+                        <li><h6 class="dropdown-header fw-bold text-dark px-0 text-uppercase small">Sede INACAP</h6></li>
+                        <li>
+                            <select name="sede" class="form-select mb-3 shadow-none border-secondary-subtle rounded-3" onchange="this.form.submit()">
+                                <option value="">Todas las sedes</option>
+                                {% for s in sedes_activas %}
+                                    <option value="{{ s.id }}" {% if sede_seleccionada == s.id|stringformat:"s" %}selected{% endif %}>{{ s.nombre }}</option>
+                                {% endfor %}
+                            </select>
+                        </li>
+                        <li><h6 class="dropdown-header fw-bold text-dark px-0 text-uppercase small">Categorías</h6></li>
+                        <li>
+                            <select name="categoria" class="form-select mb-3 shadow-none border-secondary-subtle rounded-3" onchange="this.form.submit()">
+                                <option value="">Todas las categorías</option>
+                                <option value="favoritos" {% if categoria_seleccionada == 'favoritos' %}selected{% endif %}>Mis favoritos</option>
+                                <option value="mis_productos" {% if categoria_seleccionada == 'mis_productos' %}selected{% endif %}>Mis productos</option>
+                                {% for categoria_codigo, categoria_nombre in categorias %}
+                                    <option value="{{ categoria_codigo }}" {% if categoria_seleccionada == categoria_codigo %}selected{% endif %}>{{ categoria_nombre }}</option>
+                                {% endfor %}
+                            </select>
+                        </li>
+                        <li><h6 class="dropdown-header fw-bold text-dark px-0 text-uppercase small">Ordenar por</h6></li>
+                        <li>
+                            <select name="ordenar_por" class="form-select shadow-none border-secondary-subtle rounded-3" onchange="this.form.submit()">
+                                <option value="">Seleccionar...</option>
+                                <option value="precio_asc" {% if ordenar_por == 'precio_asc' %}selected{% endif %}>Precio: Menor a Mayor</option>
+                                <option value="precio_desc" {% if ordenar_por == 'precio_desc' %}selected{% endif %}>Precio: Mayor a Menor</option>
+                                <option value="valoracion" {% if ordenar_por == 'valoracion' %}selected{% endif %}>Mejor Valorados</option>
+                            </select>
+                        </li>
+                    </ul>
+                </div>
+            </form>
+
+            <!-- Menú Usuario (Derecha) -->
+            <ul class="navbar-nav ms-auto align-items-lg-center gap-3 mt-3 mt-lg-0">
+                <li class="nav-item">
+                    <a href="{% url 'conversations_list' %}" class="nav-link text-white hover-lift text-center position-relative" title="Mis Mensajes">
+                        <i class="bi bi-chat-dots-fill fs-5"></i>
+                        
+                        <span id="chat-notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none shadow-sm" style="font-size: 0.65rem; transform: translate(-30%, 10%) !important;">
+                            0
+                        </span>
+                    </a>
+                </li>
+                
+                {% if user.is_authenticated %}
+                    <li class="nav-item dropdown text-center text-lg-start">
+                        <a class="nav-link text-white dropdown-toggle d-inline-flex align-items-center p-0 hover-lift" href="#" data-bs-toggle="dropdown">
+                            <img src="{% static 'img/icono.png' %}" alt="Avatar" class="rounded-circle me-2 bg-white p-1" style="width: 40px; height: 40px; object-fit: cover;">
+                            <span class="fw-semibold">{{ user.first_name }}</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 mt-3 rounded-4">
+                            <li><a class="dropdown-item fw-medium py-2" href="{% url 'publicar_producto' %}"><i class="bi bi-plus-circle-fill me-2 text-success"></i>Publicar Producto</a></li>
+                            <li><a class="dropdown-item fw-medium py-2" href="{% url 'profile' %}"><i class="bi bi-person-fill me-2 text-primary"></i>Mi Perfil</a></li>
+                            
+                        
+
+                            {% if user.is_staff or user.is_superuser %}
+    <li><h6 class="dropdown-header text-uppercase fw-bold text-muted small mt-2">Administración</h6></li>
+    {% if user.is_superuser %}
+        <li><a class="dropdown-item py-2 fw-semibold text-success" href="{% url 'estadisticas_admin' %}"><i class="bi bi-graph-up-arrow me-2"></i>Analítica y Ventas</a></li>
+    {% endif %}
+    <li><a class="dropdown-item py-2 fw-semibold text-primary" href="{% url 'monitor_pedidos_admin' %}"><i class="bi bi-truck me-2"></i>Pedidos y Disputas</a></li>
+    <li><a class="dropdown-item py-2" href="{% url 'lista_reportes' %}"><i class="bi bi-box-seam me-2"></i>Reportes Prod.</a></li>
+    <li><a class="dropdown-item py-2" href="{% url 'reportes_comentarios' %}"><i class="bi bi-chat-square-quote me-2"></i>Reportes Com.</a></li>
+    <li><a class="dropdown-item py-2" href="{% url 'lista_reportes_mensajes' %}"><i class="bi bi-envelope-exclamation me-2"></i>Reportes Msj.</a></li>
+    {% if user.is_superuser %}
+        <li><a class="dropdown-item py-2" href="{% url 'gestion_usuarios' %}"><i class="bi bi-people-fill me-2"></i>Gestión Usuarios</a></li>
+        <li><a class="dropdown-item py-2" href="{% url 'bitacora_auditoria_admin' %}"><i class="bi bi-journal-check me-2"></i>Bitácora Auditoría</a></li>
+    {% endif %}
+{% endif %}
+                            
+                            <li><hr class="dropdown-divider my-2"></li>
+                            <li>
+                                <button class="dropdown-item text-danger fw-bold py-2" data-bs-toggle="modal" data-bs-target="#logoutModal">
+                                    <i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión
+                                </button>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="nav-item d-flex align-items-center">
+            {% webpush_button with_class="btn btn-outline-light btn-sm rounded-pill shadow-sm px-3 fw-medium" %}
+        </li>
+                    
+                    
+                {% else %}
+                    <li class="nav-item d-grid d-lg-flex gap-2 justify-content-center">
+                        <a href="{% url 'login' %}" class="btn btn-outline-light rounded-pill px-4 fw-bold">Ingresar</a>
+                        <a href="{% url 'signup' %}" class="btn btn-light text-orange rounded-pill px-4 fw-bold shadow-sm">Registrarse</a>
+                    </li>
+                    
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>
+    <!-- CONTENIDO PRINCIPAL -->
+    <!-- flex-grow-1 empuja el footer hacia abajo -->
+    <main class="flex-grow-1 container py-4">
+        <!-- Notificaciones y Mensajes Flash del Sistema -->
+        {% if messages %}
+            <div class="messages-container mb-4">
+                {% for message in messages %}
+                    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show border-0 shadow-sm d-flex align-items-center rounded-3 mb-2" role="alert">
+                        {% if message.tags == 'error' or message.tags == 'danger' %}
+                            <i class="bi bi-shield-x fs-4 me-3 text-danger"></i>
+                        {% elif message.tags == 'success' %}
+                            <i class="bi bi-check-circle-fill fs-4 me-3 text-success"></i>
+                        {% elif message.tags == 'warning' %}
+                            <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
+                        {% else %}
+                            <i class="bi bi-info-circle-fill fs-4 me-3 text-primary"></i>
+                        {% endif %}
+                        <div class="flex-grow-1 fw-medium">{{ message }}</div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        {% block contenido %}
+        {% endblock %}
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-dark text-white py-4 mt-auto border-top border-5 border-warning">
+        <div class="container d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+            <div class="text-center text-md-start">
+                <h5 class="fw-bold mb-1 letter-spacing-1">RexMarket</h5>
+                <small class="text-white-50">Copyright &copy; 2026 Todos los derechos reservados.</small>
+            </div>
+            <div class="d-flex gap-4">
+                <a href="mailto:rexmarket26@gmail.com" class="text-white-50 text-decoration-none hover-white transition-all">
+                    <i class="bi bi-envelope-fill me-1"></i> oficialrexmarket@gmail.com
+                </a>
+                <a href="https://www.instagram.com/rexmarket_talca?igsh=OXlsZXZmZXVkdXV4" target="_blank" class="text-white-50 text-decoration-none hover-white transition-all">
+                    <i class="bi bi-instagram me-1"></i> Instagram
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- MODAL CERRAR SESIÓN -->
+    <div class="modal fade" id="logoutModal" data-bs-backdrop="static" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark"><i class="bi bi-door-open me-2 text-danger"></i>Cerrar Sesión</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-muted mt-2">
+                    Si cierras sesión, perderás el acceso a tu cuenta hasta que ingreses nuevamente. ¿Deseas continuar?
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light rounded-pill px-4 fw-medium" data-bs-dismiss="modal">Cancelar</button>
+                    <form action="{% url 'logout' %}" method="post">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger rounded-pill px-4 fw-bold">Cerrar sesión</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/base.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Script de Notificaciones en Tiempo Real -->
+    {% if user.is_authenticated %}
+
+    <!-- 1. CONTENEDOR VACÍO  -->
+<div class="toast-container position-fixed top-0 end-0 p-3" id="toast-stack" style="z-index: 2000; margin-top: 65px;"></div>
+
+<!-- 2. PLANTILLA OCULTA  -->
+<template id="toast-template">
+    <div class="toast align-items-center text-white bg-success border-0 shadow-lg position-relative" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">
+                <strong><i class="bi bi-chat-dots-fill me-2"></i> <span class="toast-sender"></span>:</strong> 
+                <span class="toast-content"></span>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close" style="z-index: 2;"></button>
+        </div>
+        <a href="#" class="toast-link stretched-link"></a>
+    </div>
+</template>
+
+    <script>
+    let ultimoMensajeId = localStorage.getItem('ultimoMensajeIdNotificado'); 
+
+    function actualizarNotificacionesChat() {
+        fetch("{% url 'contar_mensajes_no_leidos' %}")
+            .then(response => response.json())
+            .then(data => {
+                const badge = document.getElementById('chat-notification-badge');
+                
+                if (data.unread_count > 0) {
+                    badge.textContent = data.unread_count > 99 ? '99+' : data.unread_count;
+                    badge.classList.remove('d-none');
+                    
+                    if (data.latest_message && String(data.latest_message.id) !== ultimoMensajeId) {
+                        ultimoMensajeId = String(data.latest_message.id);
+                        localStorage.setItem('ultimoMensajeIdNotificado', ultimoMensajeId);
+                        
+                        const template = document.getElementById('toast-template');
+                        const clone = template.content.cloneNode(true);
+                        const newToastEl = clone.querySelector('.toast');
+                        
+                        newToastEl.querySelector('.toast-sender').textContent = data.latest_message.sender;
+                        newToastEl.querySelector('.toast-content').textContent = data.latest_message.content;
+                        newToastEl.querySelector('.toast-link').href = `/conversations/${data.latest_message.conversation_id}/`;
+                        
+                        document.getElementById('toast-stack').appendChild(newToastEl);
+                        
+                        const toastInstance = new bootstrap.Toast(newToastEl, { delay: 5000 });
+                        toastInstance.show();
+                        
+                        newToastEl.addEventListener('hidden.bs.toast', function () {
+                            newToastEl.remove();
+                        });
+                        
+                        badge.classList.add('animate-pulse');
+                        setTimeout(() => badge.classList.remove('animate-pulse'), 1000);
+                    }
+                } else {
+                    badge.classList.add('d-none');
+                }
+            })
+            .catch(error => console.error('Error al revisar mensajes:', error));
+    }
+
+    // Consultar inmediatamente al cargar la página
+    actualizarNotificacionesChat();
+        
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const notiSocket = new WebSocket(wsProtocol + window.location.host + '/ws/notificaciones/');
+
+    notiSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+
+        // --- NUEVO: CAPTURA DE EVENTO DE BANEO EN TIEMPO REAL ---
+        if (data.type === 'user_banned') {
+            const mensajeError = data.message || 'Has sido baneado. Para cualquier información envía un correo a: oficialrexmarket@gmail.com';
+            
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Cuenta Suspendida 🚫',
+                    html: `<p>Has sido baneado del sistema por violar las normas de la comunidad.</p>
+                           <p>Para cualquier información o apelar tu caso, envía un correo a:</p>
+                           <a href="mailto:oficialrexmarket@gmail.com" style="font-weight: bold; color: #d33;">oficialrexmarket@gmail.com</a>`,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    confirmButtonText: 'Ir al Login',
+                    confirmButtonColor: '#d33'
+                }).then(() => {
+                    window.location.href = '/accounts/login/';
+                });
+            } else {
+                alert(mensajeError);
+                window.location.href = '/accounts/login/';
+            }
+            return;
+        }
+
+        // --- NOTIFICACIÓN NORMAL DE CHAT ---
+        if (data.type === 'nueva_notificacion') {
+            const badge = document.getElementById('chat-notification-badge');
+            
+            // Sumar 1 al globo rojo sin consultar la base de datos
+            let count = parseInt(badge.textContent || '0') + 1;
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.classList.remove('d-none');
+            
+            // Mostrar la ventana flotante (Toast)
+            const msg = data.latest_message;
+            const template = document.getElementById('toast-template');
+            const clone = template.content.cloneNode(true);
+            const newToastEl = clone.querySelector('.toast');
+            
+            newToastEl.querySelector('.toast-sender').textContent = msg.sender;
+            newToastEl.querySelector('.toast-content').textContent = msg.content;
+            newToastEl.querySelector('.toast-link').href = `/conversations/${msg.conversation_id}/`;
+            
+            document.getElementById('toast-stack').appendChild(newToastEl);
+            const toastInstance = new bootstrap.Toast(newToastEl, { delay: 5000 });
+            toastInstance.show();
+            
+            newToastEl.addEventListener('hidden.bs.toast', function () {
+                newToastEl.remove();
+            });
+            
+            badge.classList.add('animate-pulse');
+            setTimeout(() => badge.classList.remove('animate-pulse'), 1000);
+        }
+    };
+</script>
+    
+    <style>
+        /* Animación para que la burbuja llame la atención cuando llega un mensaje */
+        @keyframes pulse-badge {
+            0% { transform: translate(-30%, 10%) scale(1); }
+            50% { transform: translate(-30%, 10%) scale(1.3); }
+            100% { transform: translate(-30%, 10%) scale(1); }
+        }
+        .animate-pulse {
+            animation: pulse-badge 0.3s ease-in-out;
+        }
+    </style>
+    {% endif %}
+
+
+<script>
+    // 1. Registro del Service Worker con alcance global
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/serviceworker.js')
+                .then(reg => console.log('Service Worker registrado con alcance total en:', reg.scope))
+                .catch(err => console.error('Error al registrar Service Worker:', err));
+        });
+    }
+
+    // 2. Control dinámico del botón de alertas
+    document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('webpush-subscribe-button');
+        if (!btn) return;
+
+        let observer = null;
+
+        const traducirBoton = () => {
+            // Pausar observador para evitar bucles infinitos
+            if (observer) observer.disconnect();
+
+            const texto = btn.innerText.toLowerCase();
+            const esSuscrito = texto.includes('unsubscribe') || texto.includes('desactivar');
+
+            if (esSuscrito) {
+                btn.innerHTML = '<i class="bi bi-bell-slash-fill me-1"></i> Desactivar Alertas';
+                btn.classList.remove('btn-outline-light');
+                btn.classList.add('btn-light', 'text-dark');
+            } else {
+                btn.innerHTML = '<i class="bi bi-bell-fill me-1"></i> Activar Alertas';
+                btn.classList.remove('btn-light', 'text-dark');
+                btn.classList.add('btn-outline-light');
+            }
+
+            // Reanudar observación de cambios
+            if (observer) {
+                observer.observe(btn, { childList: true, characterData: true, subtree: true });
+            }
+        };
+
+        // Iniciar observación del botón
+        observer = new MutationObserver(traducirBoton);
+
+        // Traducción inicial tras renderizado
+        setTimeout(traducirBoton, 200);
+    });
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.messages-container .alert').forEach(function (alerta) {
+        setTimeout(function () {
+            if (window.bootstrap && bootstrap.Alert) {
+                bootstrap.Alert.getOrCreateInstance(alerta).close();
+            } else {
+                alerta.remove();
+            }
+        }, 10000); // 10 segundos
+    });
+});
+</script>
+
+</body>
+</html>

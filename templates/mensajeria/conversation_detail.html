@@ -1,0 +1,1402 @@
+{% extends "base/base.html" %}
+
+{% block titulo %}Chat con {{ other_participant.first_name|default:other_participant.username }} | RexMarket{% endblock %}
+
+{% block contenido %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/conversation_details.css' %}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Librerías para generación y escaneo exclusivo de QR en campus -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+    .tracking-banner {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 10px 15px;
+    }
+    .stepper-wrapper {
+        display: flex;
+        justify-content: space-between;
+        position: relative;
+    }
+    .stepper-item {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+    .stepper-item.active {
+        color: #0d6efd;
+        font-weight: bold;
+    }
+    .stepper-item.completed {
+        color: #198754;
+    }
+    .stepper-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #e9ecef;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 4px;
+        font-size: 0.85rem;
+    }
+    .stepper-item.active .stepper-icon {
+        background: #0d6efd;
+        color: white;
+    }
+    .stepper-item.completed .stepper-icon {
+        background: #198754;
+        color: white;
+    }
+    #mapa-sede-interactivo {
+        height: 340px;
+        width: 100%;
+        border-radius: 10px;
+        z-index: 1;
+    }
+    #qrcode-container img, #qrcode-container canvas {
+        margin: 0 auto;
+        border-radius: 8px;
+    }
+    #qr-reader {
+        width: 100%;
+        max-width: 360px;
+        margin: 0 auto;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    @media (max-width: 576px) {
+        .chat-header-custom {
+            padding: 8px 12px;
+        }
+        .btn-tracking-header {
+            font-size: 0.8rem;
+            padding: 4px 8px;
+        }
+        .stepper-item span.step-label {
+            display: none;
+        }
+        #mapa-sede-interactivo {
+            height: 250px;
+        }
+    }
+</style>
+
+<!-- ESTRUCTURA PRINCIPAL DEL CHAT -->
+<div class="chat-container-fullscreen">
+    <!-- Encabezado del Chat -->
+    <div class="chat-header-custom d-flex justify-content-between align-items-center {% if es_auditoria_admin %}bg-dark{% else %}bg-primary{% endif %} text-white p-3">
+        <div class="d-flex align-items-center">
+            {% if es_auditoria_admin %}
+                <a href="{% url 'monitor_pedidos_admin' %}" class="text-white me-3 text-decoration-none" title="Volver al Monitor de Administración">
+                    <i class="bi bi-arrow-left fs-4"></i>
+                </a>
+                <div class="bg-warning text-dark rounded-circle d-flex justify-content-center align-items-center fw-bold me-2 me-md-3 shadow-sm flex-shrink-0" style="width: 42px; height: 42px; font-size: 1.1rem;">
+                    <i class="bi bi-shield-lock-fill"></i>
+                </div>
+                <div class="lh-sm">
+                    <h6 class="mb-0 fw-bold text-truncate" style="max-width: 260px;">
+                        {% for p in participantes_chat %}
+                            {{ p.first_name }} {{ p.last_name }}{% if not forloop.last %} &bull; {% endif %}
+                        {% endfor %}
+                    </h6>
+                    <small class="text-warning">Supervisión Administrativa</small>
+                    {% if producto %}
+                        <div class="small text-white-50 text-truncate" style="max-width: 260px;">
+                            <i class="bi bi-tag-fill me-1"></i>{{ producto.nombre }} (${{ producto.precio }})
+                        </div>
+                    {% endif %}
+                </div>
+            {% else %}
+                <a href="{% url 'conversations_list' %}" class="text-white me-3 text-decoration-none" title="Volver a mis mensajes">
+                    <i class="bi bi-arrow-left fs-4"></i>
+                </a>
+                <div class="bg-white text-primary rounded-circle d-flex justify-content-center align-items-center fw-bold me-2 me-md-3 shadow-sm flex-shrink-0" style="width: 42px; height: 42px; font-size: 1.1rem;">
+                    {{ other_participant.first_name|slice:":1"|upper }}{{ other_participant.last_name|slice:":1"|upper }}
+                </div>
+                <div class="lh-sm">
+                    <h6 class="mb-0 fw-bold text-truncate" style="max-width: 180px;">{{ other_participant.first_name }} {{ other_participant.last_name }}</h6>
+                    <small id="user-status" class="text-white-50">Desconectado</small>
+                    {% if producto %}
+                        <div class="small text-white-50 text-truncate" style="max-width: 220px;">
+                            <i class="bi bi-tag-fill me-1"></i>{{ producto.nombre }} (${{ producto.precio }})
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Botón de Acción Adaptativo (Oculto en Modo Auditoría) -->
+        <div>
+            {% if es_auditoria_admin %}
+                <span class="badge bg-warning text-dark py-2 px-3 fw-bold">
+                    <i class="bi bi-eye-fill me-1"></i>Modo Auditoría
+                </span>
+            {% elif producto and producto.vendido %}
+                <span class="badge bg-danger py-2 px-3 fw-bold">
+                    <i class="bi bi-bag-check-fill me-1"></i>Vendido
+                </span>
+            {% elif not es_misma_sede and not acepta_envio %}
+                <span class="badge bg-warning text-dark py-2 px-3" title="El vendedor solo entrega presencialmente en {{ sede_vendedor.nombre }}">
+                    <i class="bi bi-geo-alt-fill me-1"></i>Solo en {{ sede_vendedor.nombre }}
+                </span>
+            {% else %}
+                <button type="button" id="btn-pactar-entrega" class="btn btn-light btn-sm text-primary fw-bold shadow-sm btn-tracking-header" onclick="openPactarEntregaModal()" {% if producto and producto.reservado %}disabled{% endif %}>
+                    {% if producto and producto.reservado %}
+                        <i class="bi bi-hourglass-split me-1 text-warning"></i>Reservado
+                    {% elif es_misma_sede %}
+                        <i class="bi bi-geo-alt-fill me-1 text-danger"></i>
+                        <span class="d-none d-sm-inline">Pactar</span> Entrega
+                    {% else %}
+                        <i class="bi bi-truck me-1 text-primary"></i>
+                        <span class="d-none d-sm-inline">Coordinar</span> Envío
+                    {% endif %}
+                </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- BANNER DE MODO AUDITORÍA ADMINISTRATIVA -->
+    {% if es_auditoria_admin %}
+    <div class="bg-warning-subtle border-bottom border-warning px-3 py-2 d-flex flex-wrap align-items-center justify-content-between gap-2 small">
+        <div class="text-dark">
+            <i class="bi bi-shield-check text-warning-emphasis me-1"></i>
+            <strong>Vista de Auditoría (Solo Lectura):</strong> Conversación entre
+            {% for p in participantes_chat %}
+                <strong>{{ p.first_name }} ({{ p.username }})</strong>{% if not forloop.last %} y {% endif %}
+            {% endfor %}.
+        </div>
+        <span class="badge bg-dark">No altera estado de mensajes leídos</span>
+    </div>
+    {% endif %}
+
+    <!-- BANNER DE TRACKING EN TIEMPO REAL -->
+    <div id="tracking-banner" class="tracking-banner border-bottom" style="display: none;">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-2">
+            <span class="badge bg-primary rounded-pill" id="badge-lugar">Lugar: Cargando...</span>
+            <small class="text-muted fw-bold" id="badge-estado-texto">Estado: Acordado</small>
+        </div>
+
+        <!-- Timeline para Entrega Presencial -->
+        <div class="stepper-wrapper my-2" id="stepper-presencial">
+            <div id="step-acordado" class="stepper-item active">
+                <div class="stepper-icon"><i class="bi bi-handshake"></i></div>
+                <span class="step-label">Acordado</span>
+            </div>
+            <div id="step-en_camino" class="stepper-item">
+                <div class="stepper-icon"><i class="bi bi-person-walking"></i></div>
+                <span class="step-label">En Camino</span>
+            </div>
+            <div id="step-en_sitio" class="stepper-item">
+                <div class="stepper-icon"><i class="bi bi-geo-fill"></i></div>
+                <span class="step-label">En Sitio</span>
+            </div>
+            <div id="step-completado" class="stepper-item">
+                <div class="stepper-icon"><i class="bi bi-qr-code-scan"></i></div>
+                <span class="step-label">QR Validado</span>
+            </div>
+        </div>
+
+        <!-- Timeline para Envío Interregional -->
+        <div class="stepper-wrapper my-2" id="stepper-envio" style="display: none;">
+            <div id="step-envio-acordado" class="stepper-item active">
+                <div class="stepper-icon"><i class="bi bi-box-seam"></i></div>
+                <span class="step-label">Envío Acordado</span>
+            </div>
+            <div id="step-envio-enviado" class="stepper-item">
+                <div class="stepper-icon"><i class="bi bi-truck"></i></div>
+                <span class="step-label">En Tránsito</span>
+            </div>
+            <div id="step-envio-completado" class="stepper-item">
+                <div class="stepper-icon"><i class="bi bi-check-circle-fill"></i></div>
+                <span class="step-label">Recibido</span>
+            </div>
+        </div>
+
+        <!-- Botones de Acción Dinámicos -->
+        <div id="tracking-actions" class="{% if es_auditoria_admin %}d-none{% else %}d-flex justify-content-end align-items-center flex-wrap gap-2 mt-2{% endif %}"></div>
+    </div>
+    
+    <!-- Cuerpo del Chat -->
+    <ul id="message-list" class="message-list list-unstyled flex-grow-1 p-3 overflow-auto"></ul>
+    
+    <!-- Formulario de Envío o Barra de Solo Lectura -->
+    <div class="chat-input-area border-top p-2 bg-white">
+        {% if es_auditoria_admin %}
+            <div class="text-center text-muted py-2 small fw-semibold">
+                <i class="bi bi-lock-fill me-1"></i>El envío de mensajes está deshabilitado en modo de supervisión administrativa.
+            </div>
+        {% else %}
+            <form id="message-form" class="d-flex align-items-center gap-2 m-0" method="POST">
+                {% csrf_token %}
+                <input type="text" id="message-input" name="message" class="form-control border-0 shadow-sm py-2" placeholder="Escribe un mensaje..." required autocomplete="off">
+                <button type="submit" class="btn-send shadow-sm btn btn-primary rounded-circle" title="Enviar">
+                    <i class="bi bi-send-fill fs-5"></i>
+                </button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- MODAL 1: Pactar Entrega Presencial (Mapa Interactivo) o Envío Interregional -->
+<div class="modal fade" id="pactarEntregaModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold">
+                    {% if es_misma_sede %}
+                        <i class="bi bi-geo-alt-fill me-2"></i>Punto de Encuentro en {{ sede_encuentro.nombre|default:"Sede INACAP" }}
+                    {% else %}
+                        <i class="bi bi-truck me-2"></i>Coordinar Envío Interregional
+                    {% endif %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                {% if es_misma_sede %}
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <span class="small text-muted">
+                            <i class="bi bi-hand-index-thumb text-primary me-1"></i>Haz clic o arrastra el marcador azul dentro del círculo permitido ({{ sede_encuentro.radio_permitido_metros|default:250 }}m).
+                        </span>
+                        <span id="badge-distancia-sede" class="badge bg-success">Dentro del campus (0 m)</span>
+                    </div>
+
+                    <div id="mapa-sede-interactivo" class="border shadow-sm mb-3"></div>
+
+                    <div class="mb-2">
+                        <label for="entrega-lugar-nombre" class="form-label fw-bold text-dark">Referencia exacta dentro de la sede:</label>
+                        <input type="text" id="entrega-lugar-nombre" class="form-control" placeholder="Ej: Mesas frente a la cafetería, entrada principal, biblioteca..." required>
+                    </div>
+
+                    <div class="alert alert-light border small text-muted mb-0 mt-2">
+                        <i class="bi bi-clock-history text-primary me-1"></i>
+                        Si la propuesta no es respondida dentro de <strong>1 hora</strong>, expirará automáticamente. Al aceptarla, el artículo quedará <strong>Reservado</strong>.
+                    </div>
+
+                    <input type="hidden" id="entrega-lat" value="{{ sede_encuentro.latitud|stringformat:'f' }}">
+                    <input type="hidden" id="entrega-lng" value="{{ sede_encuentro.longitud|stringformat:'f' }}">
+                {% else %}
+                    <div class="alert alert-info border-0 rounded-3 small">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        El producto se encuentra en <strong>{{ sede_vendedor.nombre }}</strong> ({{ sede_vendedor.get_region_display }}) y tú estás en <strong>{{ sede_comprador.nombre }}</strong> ({{ sede_comprador.get_region_display }}).
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="select-empresa-envio" class="form-label fw-bold">Empresa de Encomienda:</label>
+                        <select id="select-empresa-envio" class="form-select">
+                            <option value="Starken">Starken (Sucursal / Domicilio)</option>
+                            <option value="Chilexpress">Chilexpress</option>
+                            <option value="Bluexpress">Bluexpress</option>
+                            <option value="Correos de Chile">Correos de Chile</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="input-direccion-envio" class="form-label fw-bold">Sucursal de retiro o dirección de destino:</label>
+                        <textarea id="input-direccion-envio" class="form-control" rows="2" placeholder="Ej: Agencia Starken Talca Centro (por pagar) o dirección completa..."></textarea>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="btn-confirmar-propuesta" class="btn btn-primary fw-bold px-4" onclick="guardarPuntoEntrega()">
+                    {% if es_misma_sede %}Confirmar Punto de Encuentro{% else %}Proponer Envío{% endif %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 2: Validación Exclusiva por Código QR Presencial -->
+<div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold"><i class="bi bi-qr-code-scan me-2"></i>Validación Presencial con QR</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <!-- Vista del Comprador: Código QR Único -->
+                <div id="vista-comprador-qr" style="display: none;">
+                    <p class="text-muted small mb-3">
+                        Cuando estés frente al vendedor y hayas revisado el producto, pídele que escanee este código QR con su cámara:
+                    </p>
+                    <div class="p-3 bg-white border border-2 border-success rounded-4 d-inline-block shadow-sm mb-3">
+                        <div id="qrcode-container"></div>
+                    </div>
+                    <div class="alert alert-warning py-2 px-3 small border-0 mb-0">
+                        <i class="bi bi-shield-exclamation me-1"></i>
+                        <strong>Seguridad presencial:</strong> No envíes capturas de este QR por chat. Solo debe escanearse en persona.
+                    </div>
+                </div>
+
+                <!-- Vista del Vendedor: Escáner de Cámara -->
+                <div id="vista-vendedor-qr" style="display: none;">
+                    <p class="text-muted small mb-3">
+                        Apunta la cámara de tu dispositivo al código QR que muestra el comprador en su pantalla:
+                    </p>
+                    <div id="qr-reader" class="border shadow-sm bg-dark"></div>
+                    <div id="qr-scanner-status" class="small text-muted mt-3 fw-semibold">
+                        <span class="spinner-border spinner-border-sm text-success me-1"></span>Iniciando cámara...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 3: Despachar Encomienda (Vendedor ingresa código de seguimiento) -->
+<div class="modal fade" id="despachoEnvioModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold"><i class="bi bi-truck me-2"></i>Registrar Despacho de Encomienda</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Ingresa el número de orden o seguimiento del comprobante de envío para que el comprador pueda rastrear su paquete.</p>
+                <label for="input-codigo-seguimiento" class="form-label fw-bold">Código de Seguimiento:</label>
+                <input type="text" id="input-codigo-seguimiento" class="form-control form-control-lg" placeholder="Ej: 987654321" autocomplete="off">
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary fw-bold" onclick="enviarCodigoSeguimiento()">Confirmar Despacho</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Reportar Mensaje -->
+<div class="modal fade" id="reportMessageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-danger"><i class="bi bi-flag-fill me-2"></i>Reportar Mensaje</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Si este mensaje incumple las normas de la comunidad, repórtalo para que un administrador lo revise.</p>
+                <input type="hidden" id="report-message-id">
+                <textarea id="report-reason" class="form-control" rows="3" placeholder="Escribe el motivo del reporte..." required></textarea>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="submitMessageReport()">Enviar Reporte</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Valoración y Calificación -->
+<div class="modal fade" id="ratingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg text-center">
+            <div class="modal-header bg-success text-white border-0">
+                <h5 class="modal-title fw-bold mb-0"><i class="bi bi-star-fill me-2"></i>¡Entrega Confirmada!</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="fs-6 text-muted mb-2">¿Cómo calificas la atención y el producto recibido? <span class="badge bg-light text-secondary border">Opcional</span></p>
+                <div class="mb-3 fs-1 text-warning" id="rating-stars-container">
+                    <i class="bi bi-star-fill star-item" data-value="1" style="cursor: pointer;"></i>
+                    <i class="bi bi-star-fill star-item" data-value="2" style="cursor: pointer;"></i>
+                    <i class="bi bi-star-fill star-item" data-value="3" style="cursor: pointer;"></i>
+                    <i class="bi bi-star-fill star-item" data-value="4" style="cursor: pointer;"></i>
+                    <i class="bi bi-star-fill star-item" data-value="5" style="cursor: pointer;"></i>
+                </div>
+                <input type="hidden" id="input-rating-value" value="5">
+                <div class="mb-3 text-start">
+                    <label class="form-label fw-bold small text-secondary">Opinión sobre el vendedor/producto:</label>
+                    <textarea id="input-rating-comment" class="form-control" rows="3" placeholder="Ej: Excelente comunicación, llegó a tiempo al punto acordado..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-0 justify-content-center gap-2 pt-0">
+                <button type="button" class="btn btn-outline-secondary px-4 rounded-pill" data-bs-dismiss="modal">
+                    Omitir
+                </button>
+                <button type="button" class="btn btn-success fw-bold px-4 rounded-pill" onclick="guardarValoracionProducto()">
+                    Enviar Calificación
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const conversationId = {{ conversation.id }};
+    const messageList = document.getElementById('message-list');
+    const messageInput = document.getElementById('message-input');
+    const userId = {{ request.user.id }};
+    const esMismaSede = {{ es_misma_sede|yesno:"true,false" }};
+
+    const sedeCenterLat = parseFloat("{{ sede_encuentro.latitud|default:'-35.4357'|stringformat:'f' }}");
+    const sedeCenterLng = parseFloat("{{ sede_encuentro.longitud|default:'-71.6212'|stringformat:'f' }}");
+    const sedeRadioMetros = parseInt("{{ sede_encuentro.radio_permitido_metros|default:'250' }}", 10);
+
+    let activePedido = null;
+    let timerInasistenciaInterval = null;
+    let timerExpiracionInterval = null;
+    let modalValoracionAbierto = false;
+    let mapaSede = null;
+    let marcadorEncuentro = null;
+    let html5QrScanner = null;
+    let qrValidacionEnCurso = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
+        const stars = document.querySelectorAll('.star-item');
+        const ratingInput = document.getElementById('input-rating-value');
+        const ratingModalEl = document.getElementById('ratingModal');
+        if (ratingModalEl) {
+            ratingModalEl.addEventListener('hidden.bs.modal', function () {
+                if (activePedido && activePedido.id) {
+                    localStorage.setItem(`rating_dismissed_${activePedido.id}`, 'true');
+                }
+            });
+        }
+        if (stars.length > 0 && ratingInput) {
+            stars.forEach(star => {
+                star.addEventListener('click', function () {
+                    const val = parseInt(this.getAttribute('data-value'));
+                    ratingInput.value = val;
+                    stars.forEach((s, idx) => {
+                        if (idx < val) {
+                            s.classList.replace('bi-star', 'bi-star-fill');
+                        } else {
+                            s.classList.replace('bi-star-fill', 'bi-star');
+                        }
+                    });
+                });
+            });
+        }
+
+        // Detener cámara QR automáticamente si se cierra el modal
+        const qrModalEl = document.getElementById('qrModal');
+        if (qrModalEl) {
+            qrModalEl.addEventListener('hidden.bs.modal', () => {
+                detenerEscanerQR();
+            });
+        }
+    });
+
+    function calcularDistanciaJS(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    function actualizarCoordenadaSeleccionada(lat, lng) {
+        document.getElementById('entrega-lat').value = lat.toFixed(6);
+        document.getElementById('entrega-lng').value = lng.toFixed(6);
+
+        const dist = Math.round(calcularDistanciaJS(sedeCenterLat, sedeCenterLng, lat, lng));
+        const badgeDist = document.getElementById('badge-distancia-sede');
+        const btnConfirmar = document.getElementById('btn-confirmar-propuesta');
+
+        if (dist <= sedeRadioMetros) {
+            badgeDist.className = 'badge bg-success';
+            badgeDist.textContent = `Dentro del campus (${dist} m)`;
+            btnConfirmar.disabled = false;
+        } else {
+            badgeDist.className = 'badge bg-danger';
+            badgeDist.textContent = `Fuera de perímetro (${dist} m > ${sedeRadioMetros} m)`;
+            btnConfirmar.disabled = true;
+        }
+    }
+
+    function inicializarMapaSede() {
+        const mapEl = document.getElementById('mapa-sede-interactivo');
+        if (!mapEl) return;
+
+        if (!mapaSede) {
+            const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: 'Google Maps'
+            });
+            const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                attribution: 'Google Satélite'
+            });
+
+            mapaSede = L.map('mapa-sede-interactivo', {
+                center: [sedeCenterLat, sedeCenterLng],
+                zoom: 17,
+                layers: [googleHybrid]
+            });
+
+            L.control.layers({ "Satélite": googleHybrid, "Mapa": googleStreets }).addTo(mapaSede);
+
+            L.circle([sedeCenterLat, sedeCenterLng], {
+                color: '#0d6efd',
+                fillColor: '#0d6efd',
+                fillOpacity: 0.12,
+                radius: sedeRadioMetros
+            }).addTo(mapaSede);
+
+            marcadorEncuentro = L.marker([sedeCenterLat, sedeCenterLng], { draggable: true }).addTo(mapaSede);
+            marcadorEncuentro.bindPopup("<b>Punto de encuentro</b><br>Arrástrame al lugar exacto").openPopup();
+
+            marcadorEncuentro.on('dragend', function (e) {
+                const pos = e.target.getLatLng();
+                actualizarCoordenadaSeleccionada(pos.lat, pos.lng);
+            });
+
+            mapaSede.on('click', function (e) {
+                marcadorEncuentro.setLatLng(e.latlng);
+                actualizarCoordenadaSeleccionada(e.latlng.lat, e.latlng.lng);
+            });
+        }
+
+        setTimeout(() => {
+            mapaSede.invalidateSize();
+            actualizarCoordenadaSeleccionada(sedeCenterLat, sedeCenterLng);
+        }, 250);
+    }
+
+    function openPactarEntregaModal() {
+        const modalEl = document.getElementById('pactarEntregaModal');
+        if (!modalEl) return;
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        if (esMismaSede) {
+            inicializarMapaSede();
+        }
+    }
+
+    function guardarPuntoEntrega() {
+        let payload = {};
+
+        if (esMismaSede) {
+            const lugarNombre = document.getElementById('entrega-lugar-nombre').value.trim();
+            const lat = document.getElementById('entrega-lat').value;
+            const lng = document.getElementById('entrega-lng').value;
+
+            if (!lugarNombre) {
+                alert('Escribe una referencia exacta dentro de la sede (ej: Cafetería central).');
+                return;
+            }
+            payload = {
+                tipo_entrega: 'presencial',
+                lugar_nombre: lugarNombre,
+                latitud: lat,
+                longitud: lng
+            };
+        } else {
+            const empresaEnvio = document.getElementById('select-empresa-envio').value;
+            const direccionEnvio = document.getElementById('input-direccion-envio').value.trim();
+
+            if (!direccionEnvio) {
+                alert('Indica la sucursal o dirección de destino para el envío.');
+                return;
+            }
+            payload = {
+                tipo_entrega: 'envio',
+                empresa_envio: empresaEnvio,
+                direccion_envio: direccionEnvio
+            };
+        }
+
+        fetch(`/conversations/${conversationId}/tracking/proponer/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            const modalEl = document.getElementById('pactarEntregaModal');
+            const modalInstance = bootstrap.Modal.getInstance(modalEl);
+            if (modalInstance) modalInstance.hide();
+
+            actualizarUIBannerTracking(data.pedido);
+            loadMessages();
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+            }
+        })
+        .catch(err => console.error('Error al proponer entrega:', err));
+    }
+
+    function responderSolicitud(aceptar) {
+        fetch(`/conversations/${conversationId}/tracking/responder/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify({ aceptar: aceptar })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                loadMessages();
+                return;
+            }
+            actualizarUIBannerTracking(data.pedido);
+            loadMessages();
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+            }
+        })
+        .catch(err => console.error('Error al responder solicitud:', err));
+    }
+
+    function actualizarUIBannerTracking(pedido, prodReservado = false, prodVendido = false) {
+        const btnPactar = document.getElementById('btn-pactar-entrega');
+
+        if (!pedido) {
+            if (btnPactar) {
+                if (prodVendido) {
+                    btnPactar.disabled = true;
+                    btnPactar.className = 'btn btn-danger btn-sm fw-bold';
+                    btnPactar.innerHTML = `<i class="bi bi-bag-check-fill me-1"></i>Vendido`;
+                } else if (prodReservado) {
+                    btnPactar.disabled = true;
+                    btnPactar.className = 'btn btn-warning btn-sm text-dark fw-bold';
+                    btnPactar.innerHTML = `<i class="bi bi-hourglass-split me-1"></i>Reservado`;
+                } else {
+                    btnPactar.disabled = false;
+                    btnPactar.className = 'btn btn-light btn-sm text-primary fw-bold shadow-sm btn-tracking-header';
+                    btnPactar.innerHTML = esMismaSede
+                        ? `<i class="bi bi-geo-alt-fill me-1 text-danger"></i>Pactar Entrega`
+                        : `<i class="bi bi-truck me-1 text-primary"></i>Coordinar Envío`;
+                }
+            }
+            return;
+        }
+
+        activePedido = pedido;
+
+        const banner = document.getElementById('tracking-banner');
+        const actionsContainer = document.getElementById('tracking-actions');
+        const stepperPresencial = document.getElementById('stepper-presencial');
+        const stepperEnvio = document.getElementById('stepper-envio');
+
+        if (banner) banner.style.display = 'block';
+        if (!actionsContainer) return;
+
+        actionsContainer.innerHTML = '';
+        if (timerInasistenciaInterval) clearInterval(timerInasistenciaInterval);
+        if (timerExpiracionInterval) clearInterval(timerExpiracionInterval);
+
+        const esEnvio = pedido.tipo_entrega === 'envio';
+        if (stepperPresencial) stepperPresencial.style.display = esEnvio ? 'none' : 'flex';
+        if (stepperEnvio) stepperEnvio.style.display = esEnvio ? 'flex' : 'none';
+
+        if (btnPactar) {
+            if (pedido.estado === 'completado' || prodVendido) {
+                btnPactar.disabled = true;
+                btnPactar.className = 'btn btn-success btn-sm fw-bold';
+                btnPactar.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i>Finalizada`;
+            } else if (pedido.estado === 'cancelado_inasistencia') {
+                btnPactar.disabled = false;
+                btnPactar.className = 'btn btn-light btn-sm text-primary fw-bold shadow-sm btn-tracking-header';
+                btnPactar.innerHTML = esMismaSede
+                    ? `<i class="bi bi-geo-alt-fill me-1 text-danger"></i>Nueva Entrega`
+                    : `<i class="bi bi-truck me-1 text-primary"></i>Nuevo Envío`;
+            } else if (pedido.estado === 'rechazado' || pedido.estado === 'expirado' || pedido.estado === 'cancelado_admin') {
+                if (prodReservado) {
+                    btnPactar.disabled = true;
+                    btnPactar.className = 'btn btn-warning btn-sm text-dark fw-bold';
+                    btnPactar.innerHTML = `<i class="bi bi-hourglass-split me-1"></i>Reservado`;
+                } else {
+                    btnPactar.disabled = false;
+                    btnPactar.className = 'btn btn-light btn-sm text-primary fw-bold shadow-sm btn-tracking-header';
+                    btnPactar.innerHTML = esMismaSede
+                        ? `<i class="bi bi-geo-alt-fill me-1 text-danger"></i>Pactar Entrega`
+                        : `<i class="bi bi-truck me-1 text-primary"></i>Coordinar Envío`;
+                }
+            } else {
+                btnPactar.disabled = true;
+            }
+        }
+
+        // COMPLETADO
+        if (pedido.estado === 'completado') {
+            document.getElementById('badge-lugar').textContent = esEnvio
+                ? `Encomienda: ${pedido.empresa_envio} (${pedido.codigo_seguimiento || 'Entregado'})`
+                : `Punto: ${pedido.lugar_nombre}`;
+            document.getElementById('badge-estado-texto').textContent = `Estado: Transacción Completada`;
+
+            let htmlCompletado = `<span class="badge bg-success p-2 fs-6"><i class="bi bi-patch-check-fill me-1"></i>Transacción Exitosa</span>`;
+            if (userId === pedido.comprador_id && !pedido.ya_valorado) {
+                htmlCompletado += `
+                    <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold" onclick="abrirModalValoracion()">
+                        <i class="bi bi-star-fill text-warning me-1"></i>Calificar
+                    </button>`;
+            }
+            actionsContainer.innerHTML = htmlCompletado;
+
+            const yaOmitido = localStorage.getItem(`rating_dismissed_${pedido.id}`) === 'true';
+            if (userId === pedido.comprador_id && !pedido.ya_valorado && !yaOmitido && !modalValoracionAbierto) {
+                modalValoracionAbierto = true;
+                setTimeout(() => {
+                    abrirModalValoracion();
+                }, 400);
+            }
+            return;
+        }
+
+        // CANCELADO POR INASISTENCIA
+        if (pedido.estado === 'cancelado_inasistencia') {
+            document.getElementById('badge-lugar').textContent = `Punto: ${pedido.lugar_nombre}`;
+            document.getElementById('badge-estado-texto').textContent = `Estado: Cancelada por Inasistencia`;
+            const textoBadge = (userId === pedido.comprador_id)
+                ? '<i class="bi bi-x-circle-fill me-1"></i>Transacción Fallida (1★ asignada)'
+                : '<i class="bi bi-x-circle-fill me-1"></i>Transacción Cancelada por Inasistencia';
+            actionsContainer.innerHTML = `<span class="badge bg-danger p-2 fs-6">${textoBadge}</span>`;
+            return;
+        }
+
+        // ANULADO POR ADMINISTRACIÓN
+        if (pedido.estado === 'cancelado_admin') {
+            document.getElementById('badge-lugar').textContent = `Punto: ${pedido.lugar_nombre}`;
+            document.getElementById('badge-estado-texto').textContent = `Estado: Anulado por Administración`;
+            actionsContainer.innerHTML = `<span class="badge bg-dark p-2 fs-6"><i class="bi bi-shield-x me-1"></i>Pedido Anulado por Administración</span>`;
+            return;
+        }
+
+        // EXPIRADO TRAS 1 HORA SIN RESPUESTA
+        if (pedido.estado === 'expirado') {
+            document.getElementById('badge-lugar').textContent = `Propuesta anterior: ${pedido.lugar_nombre}`;
+            document.getElementById('badge-estado-texto').textContent = `Estado: Expirado (1h sin respuesta)`;
+            actionsContainer.innerHTML = `<span class="badge bg-warning text-dark p-2"><i class="bi bi-clock-history me-1"></i>Propuesta Expirada por Inactividad (1h)</span>`;
+            return;
+        }
+
+        // RECHAZADO
+        if (pedido.estado === 'rechazado') {
+            document.getElementById('badge-estado-texto').textContent = `Estado: Rechazada`;
+            actionsContainer.innerHTML = `<span class="badge bg-secondary p-2 fs-6">Propuesta Rechazada</span>`;
+            return;
+        }
+
+        // SOLICITADO (CON CUENTA REGRESIVA DE 1 HORA)
+        if (pedido.estado === 'solicitado') {
+            document.getElementById('badge-lugar').textContent = esEnvio
+                ? `Envío Propuesto: ${pedido.empresa_envio} → ${pedido.direccion_envio}`
+                : `Punto Propuesto: ${pedido.lugar_nombre}`;
+            document.getElementById('badge-estado-texto').textContent = `Estado: Esperando Confirmación`;
+
+            let segsExp = pedido.segundos_restantes_expiracion || 0;
+            const expSpan = document.createElement('span');
+            expSpan.className = 'badge bg-warning text-dark font-monospace';
+
+            const actualizarRelojExpiracion = () => {
+                if (segsExp <= 0) {
+                    clearInterval(timerExpiracionInterval);
+                    expSpan.textContent = 'Expirando...';
+                    fetch(`/conversations/${conversationId}/tracking/verificar-expiracion/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                        }
+                    }).then(() => loadMessages());
+                    return;
+                }
+                const mins = Math.floor(segsExp / 60);
+                const secs = segsExp % 60;
+                expSpan.innerHTML = `<i class="bi bi-hourglass-split me-1"></i>Expira en ${mins}:${secs < 10 ? '0' : ''}${secs}`;
+                segsExp--;
+            };
+
+            actualizarRelojExpiracion();
+            timerExpiracionInterval = setInterval(actualizarRelojExpiracion, 1000);
+            actionsContainer.appendChild(expSpan);
+
+            if (pedido.propuesto_por_id !== userId) {
+                actionsContainer.insertAdjacentHTML('beforeend', `
+                    <span class="me-1 fw-bold text-dark small">¿Aceptas?</span>
+                    <button class="btn btn-sm btn-success fw-bold" onclick="responderSolicitud(true)">Aceptar y Reservar</button>
+                    <button class="btn btn-sm btn-outline-danger fw-bold" onclick="responderSolicitud(false)">Rechazar</button>`);
+            } else {
+                actionsContainer.insertAdjacentHTML('beforeend', `<span class="text-muted fst-italic small">Esperando confirmación de la contraparte...</span>`);
+            }
+            return;
+        }
+
+        // FLUJO DE ENVÍO INTERREGIONAL ACTIVO
+        if (esEnvio) {
+            document.getElementById('badge-lugar').textContent = `${pedido.empresa_envio} → ${pedido.direccion_envio}`;
+            document.getElementById('badge-estado-texto').textContent = `Estado: ${pedido.estado_display} (Reservado)`;
+
+            const stAcordado = document.getElementById('step-envio-acordado');
+            const stEnviado = document.getElementById('step-envio-enviado');
+            const stComp = document.getElementById('step-envio-completado');
+
+            stAcordado.className = 'stepper-item ' + (pedido.estado === 'acordado' ? 'active' : 'completed');
+            stEnviado.className = 'stepper-item ' + (pedido.estado === 'enviado' ? 'active' : (pedido.estado === 'completado' ? 'completed' : ''));
+            stComp.className = 'stepper-item';
+
+            if (pedido.estado === 'acordado') {
+                if (userId === pedido.vendedor_id) {
+                    actionsContainer.innerHTML = `
+                        <button class="btn btn-sm btn-primary fw-bold" onclick="abrirModalDespacho()">
+                            <i class="bi bi-upc-scan me-1"></i>Ingresar Código de Seguimiento
+                        </button>`;
+                } else {
+                    actionsContainer.innerHTML = `<span class="text-muted small fst-italic">Artículo reservado para ti. Esperando despacho del vendedor...</span>`;
+                }
+            } else if (pedido.estado === 'enviado') {
+                actionsContainer.innerHTML = `
+                    <span class="badge bg-info text-dark py-2 px-3">
+                        <i class="bi bi-box-seam me-1"></i>Seguimiento: <strong>${pedido.codigo_seguimiento}</strong>
+                    </span>`;
+                if (userId === pedido.comprador_id) {
+                    actionsContainer.innerHTML += `
+                        <button class="btn btn-sm btn-success fw-bold" onclick="confirmarRecepcionPaquete()">
+                            <i class="bi bi-check2-circle me-1"></i>Confirmar Recepción
+                        </button>`;
+                }
+            }
+            return;
+        }
+
+        // FLUJO PRESENCIAL ACTIVO EN SEDE (SOLO QR)
+        document.getElementById('badge-lugar').innerHTML = `
+            Punto: ${pedido.lugar_nombre}
+            ${pedido.latitud && pedido.longitud ? `<a href="https://www.google.com/maps?q=${pedido.latitud},${pedido.longitud}" target="_blank" class="text-white ms-2 text-decoration-underline"><i class="bi bi-box-arrow-up-right"></i> Maps</a>` : ''}
+        `;
+        document.getElementById('badge-estado-texto').textContent = `Estado: ${pedido.estado_display} • Reservado`;
+
+        const estadosOrden = ['acordado', 'en_camino', 'en_sitio', 'completado'];
+        const currentIdx = estadosOrden.indexOf(pedido.estado);
+
+        estadosOrden.forEach((st, idx) => {
+            const el = document.getElementById(`step-${st}`);
+            if (el) {
+                el.className = 'stepper-item';
+                if (idx < currentIdx) el.classList.add('completed');
+                if (idx === currentIdx) el.classList.add('active');
+            }
+        });
+
+        if (pedido.estado === 'acordado') {
+            actionsContainer.innerHTML += `
+                <button class="btn btn-sm btn-outline-primary fw-semibold" onclick="cambiarEstadoTracking('en_camino')">
+                    <i class="bi bi-person-walking me-1"></i>Voy en camino
+                </button>`;
+        } else if (pedido.estado === 'en_camino') {
+            actionsContainer.innerHTML += `
+                <button class="btn btn-sm btn-outline-warning text-dark fw-semibold" onclick="cambiarEstadoTracking('en_sitio')">
+                    <i class="bi bi-geo-fill me-1"></i>Llegué al punto
+                </button>`;
+        }
+
+        if (pedido.estado === 'en_sitio') {
+            if (userId === pedido.comprador_id) {
+                actionsContainer.innerHTML += `
+                    <button class="btn btn-sm btn-success fw-bold" onclick="abrirModalQR('comprador')">
+                        <i class="bi bi-qr-code me-1"></i>Mostrar mi QR
+                    </button>`;
+            } else {
+                actionsContainer.innerHTML += `
+                    <button class="btn btn-sm btn-success fw-bold" onclick="abrirModalQR('vendedor')">
+                        <i class="bi bi-qr-code-scan me-1"></i>Escanear QR del Comprador
+                    </button>`;
+            }
+        } else {
+            actionsContainer.innerHTML += `
+                <span class="badge bg-light text-secondary border small">
+                    <i class="bi bi-qr-code me-1"></i>El QR se habilitará al marcar "Llegué al punto"
+                </span>`;
+        }
+
+        if (pedido.estado === 'en_sitio' && pedido.quien_llego_primero_id === userId) {
+            let tiempoRestante = 30 - (pedido.segundos_esperados || 0);
+            const generarBotonInasistencia = () => {
+                if (userId === pedido.comprador_id) {
+                    return `<button class="btn btn-sm btn-danger fw-bold" onclick="ejecutarReporteInasistencia()"><i class="bi bi-exclamation-triangle-fill me-1"></i>Reportar Inasistencia (1★)</button>`;
+                }
+                return `<button class="btn btn-sm btn-outline-danger fw-bold" onclick="ejecutarReporteInasistencia()"><i class="bi bi-x-circle-fill me-1"></i>Cancelar y Liberar</button>`;
+            };
+
+            if (tiempoRestante <= 0) {
+                actionsContainer.insertAdjacentHTML('beforeend', generarBotonInasistencia());
+            } else {
+                const timerSpan = document.createElement('span');
+                timerSpan.id = 'timer-inasistencia-text';
+                timerSpan.className = 'badge bg-dark font-monospace';
+                actionsContainer.appendChild(timerSpan);
+
+                timerInasistenciaInterval = setInterval(() => {
+                    if (tiempoRestante <= 0) {
+                        clearInterval(timerInasistenciaInterval);
+                        timerSpan.outerHTML = generarBotonInasistencia();
+                    } else {
+                        const minutos = Math.floor(tiempoRestante / 60);
+                        const segundos = tiempoRestante % 60;
+                        timerSpan.textContent = `Tolerancia: ${minutos}:${segundos < 10 ? '0' : ''}${segundos}`;
+                        tiempoRestante--;
+                    }
+                }, 1000);
+            }
+        }
+    }
+
+    function abrirModalDespacho() {
+        new bootstrap.Modal(document.getElementById('despachoEnvioModal')).show();
+    }
+
+    function enviarCodigoSeguimiento() {
+        const codigo = document.getElementById('input-codigo-seguimiento').value.trim();
+        if (codigo.length < 4) {
+            alert('Ingresa un código de seguimiento válido.');
+            return;
+        }
+
+        fetch(`/conversations/${conversationId}/tracking/despachar/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify({ codigo_seguimiento: codigo })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            const modalInst = bootstrap.Modal.getInstance(document.getElementById('despachoEnvioModal'));
+            if (modalInst) modalInst.hide();
+            actualizarUIBannerTracking(data.pedido);
+            loadMessages();
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+            }
+        });
+    }
+
+    function confirmarRecepcionPaquete() {
+        if (!confirm('¿Confirmas que recibiste el paquete en buenas condiciones? Esto finalizará la compra.')) return;
+
+        fetch(`/conversations/${conversationId}/tracking/confirmar-recepcion/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            actualizarUIBannerTracking(data.pedido);
+            loadMessages();
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+            }
+        });
+    }
+
+    function cambiarEstadoTracking(nuevoEstado) {
+        fetch(`/conversations/${conversationId}/tracking/actualizar-estado/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify({ estado: nuevoEstado })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            actualizarUIBannerTracking(data.pedido);
+            loadMessages();
+            if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+            }
+        });
+    }
+
+    function ejecutarReporteInasistencia() {
+        const esComprador = activePedido && activePedido.comprador_id === userId;
+        const mensajeConfirm = esComprador
+            ? '¿Confirmas que el vendedor no asistió tras la espera? Se cancelará la entrega y se le asignará 1 estrella de penalización.'
+            : '¿Confirmas que el comprador no se presentó al punto de encuentro? Se cancelará la transacción y el producto volverá a estar disponible.';
+
+        if (!confirm(mensajeConfirm)) return;
+
+        fetch(`/conversations/${conversationId}/tracking/reportar-inasistencia/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                actualizarUIBannerTracking(data.pedido);
+                loadMessages();
+                if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                    chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+                }
+            }
+        });
+    }
+
+    // =========================================================================
+    // VALIDACIÓN PRESENCIAL EXCLUSIVA CON CÓDIGO QR
+    // =========================================================================
+
+    function detenerEscanerQR() {
+        if (html5QrScanner) {
+            html5QrScanner.stop()
+                .then(() => {
+                    html5QrScanner.clear();
+                    html5QrScanner = null;
+                })
+                .catch(() => {
+                    html5QrScanner = null;
+                });
+        }
+        qrValidacionEnCurso = false;
+    }
+
+    function abrirModalQR(rol) {
+        const modalEl = document.getElementById('qrModal');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        const vistaComprador = document.getElementById('vista-comprador-qr');
+        const vistaVendedor = document.getElementById('vista-vendedor-qr');
+
+        if (rol === 'comprador') {
+            vistaComprador.style.display = 'block';
+            vistaVendedor.style.display = 'none';
+
+            const qrContainer = document.getElementById('qrcode-container');
+            qrContainer.innerHTML = '';
+
+            if (activePedido && activePedido.token_qr) {
+                new QRCode(qrContainer, {
+                    text: activePedido.token_qr,
+                    width: 220,
+                    height: 220,
+                    colorDark: "#198754",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            } else {
+                qrContainer.innerHTML = '<p class="text-danger small mb-0">No se pudo cargar el token QR. Recarga el chat.</p>';
+            }
+            modal.show();
+        } else {
+            vistaComprador.style.display = 'none';
+            vistaVendedor.style.display = 'block';
+            qrValidacionEnCurso = false;
+
+            const statusEl = document.getElementById('qr-scanner-status');
+            statusEl.innerHTML = '<span class="spinner-border spinner-border-sm text-success me-1"></span>Solicitando acceso a la cámara...';
+            modal.show();
+
+            setTimeout(() => {
+                iniciarEscanerCamaraQR();
+            }, 300);
+        }
+    }
+
+    function iniciarEscanerCamaraQR() {
+        const statusEl = document.getElementById('qr-scanner-status');
+        detenerEscanerQR();
+
+        html5QrScanner = new Html5Qrcode("qr-reader");
+        html5QrScanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 230, height: 230 } },
+            (decodedText) => {
+                if (qrValidacionEnCurso) return;
+                qrValidacionEnCurso = true;
+                statusEl.innerHTML = '<span class="spinner-border spinner-border-sm text-primary me-1"></span>Validando código QR...';
+                validarQRVendedor(decodedText);
+            },
+            () => {
+                // Lectura continua en curso
+            }
+        ).then(() => {
+            statusEl.innerHTML = '<i class="bi bi-camera-video-fill text-success me-1"></i>Cámara activa: encuadra el QR del comprador';
+        }).catch((err) => {
+            console.error("Error de cámara QR:", err);
+            statusEl.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>No se pudo acceder a la cámara. Verifica los permisos del navegador.</span>';
+        });
+    }
+
+    function validarQRVendedor(qrToken) {
+        const statusEl = document.getElementById('qr-scanner-status');
+
+        fetch(`/conversations/${conversationId}/tracking/validar-qr/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify({ qr_token: qrToken })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.valido) {
+                detenerEscanerQR();
+                const modalInstance = bootstrap.Modal.getInstance(document.getElementById('qrModal'));
+                if (modalInstance) modalInstance.hide();
+
+                actualizarUIBannerTracking(data.pedido, false, true);
+                loadMessages();
+                if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                    chatSocket.send(JSON.stringify({'action': 'actualizar_chat'}));
+                }
+                alert('✅ ¡Código QR verificado con éxito! Entrega completada.');
+            } else {
+                statusEl.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill me-1"></i>${data.error || 'Código QR inválido.'}</span>`;
+                setTimeout(() => {
+                    qrValidacionEnCurso = false;
+                    statusEl.innerHTML = '<i class="bi bi-camera-video-fill text-success me-1"></i>Apunta nuevamente al QR del comprador';
+                }, 2000);
+            }
+        })
+        .catch(() => {
+            qrValidacionEnCurso = false;
+            statusEl.innerHTML = '<span class="text-danger">Error de red al validar el código QR.</span>';
+        });
+    }
+
+    function abrirModalValoracion() {
+        const ratingModalEl = document.getElementById('ratingModal');
+        if (ratingModalEl) {
+            bootstrap.Modal.getOrCreateInstance(ratingModalEl).show();
+        }
+    }
+
+    function guardarValoracionProducto() {
+        const valoracion = document.getElementById('input-rating-value').value;
+        const comentario = document.getElementById('input-rating-comment').value.trim();
+
+        fetch(`/conversations/${conversationId}/valorar/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify({ valoracion: valoracion, comentario: comentario })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                if (activePedido) {
+                    activePedido.ya_valorado = true;
+                    localStorage.setItem(`rating_dismissed_${activePedido.id}`, 'true');
+                    actualizarUIBannerTracking(activePedido);
+                }
+                const modalInstance = bootstrap.Modal.getInstance(document.getElementById('ratingModal'));
+                if (modalInstance) modalInstance.hide();
+                alert('⭐ ' + data.message);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        });
+    }
+
+    function scrollToBottom() {
+        if (messageList) {
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function loadMessages() {
+        fetch(`/conversations/${conversationId}/messages/`, { cache: 'no-store' })
+            .then(response => response.json())
+            .then(data => {
+                if (!messageList) return;
+                messageList.innerHTML = '';
+
+                actualizarUIBannerTracking(
+                    data.pedido || null,
+                    Boolean(data.producto_reservado),
+                    Boolean(data.producto_vendido)
+                );
+
+                (data.messages || []).forEach(message => {
+                    const li = document.createElement('li');
+                    li.classList.add('message-item');
+
+                    if (message.sender.id === userId) {
+                        const tickHtml = message.is_read
+                            ? '<i class="bi bi-check2-all text-primary ms-1" title="Leído"></i>'
+                            : '<i class="bi bi-check2-all text-secondary ms-1" title="Enviado"></i>';
+
+                        li.classList.add('sent');
+                        li.innerHTML = `
+                            <p class="message-content">${escapeHtml(message.content)}</p>
+                            <span class="message-timestamp">${message.timestamp} ${tickHtml}</span>
+                        `;
+                    } else {
+                        li.classList.add('received');
+                        li.innerHTML = `
+                            <span class="message-sender">${escapeHtml(message.sender.first_name)}</span>
+                            <p class="message-content">${escapeHtml(message.content)}</p>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <span class="message-timestamp m-0">${message.timestamp}</span>
+                                <button type="button" class="btn btn-link btn-sm text-danger p-0 ms-3 text-decoration-none" onclick="openReportModal(${message.id})" title="Reportar mensaje">
+                                    <i class="bi bi-flag"></i>
+                                </button>
+                            </div>
+                        `;
+                    }
+                    messageList.appendChild(li);
+                });
+                scrollToBottom();
+            })
+            .catch(error => console.error('Error al cargar mensajes:', error));
+    }
+
+    loadMessages();
+
+    const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const chatSocket = new WebSocket(wsScheme + '://' + window.location.host + '/ws/chat/' + conversationId + '/');
+
+    chatSocket.onopen = function() {
+        chatSocket.send(JSON.stringify({'action': 'mark_as_read'}));
+    };
+
+    chatSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+
+        if (data.type === 'status') {
+            if (data.user_id !== userId) {
+                if (data.status === 'ping') {
+                    chatSocket.send(JSON.stringify({'action': 'reply_status'}));
+                    return;
+                }
+                const statusElement = document.getElementById('user-status');
+                if (statusElement) {
+                    statusElement.textContent = data.status;
+                    if (data.status === 'En línea') {
+                        statusElement.classList.replace('text-white-50', 'text-white');
+                        statusElement.classList.add('fw-bold');
+                        if (data.is_new) {
+                            chatSocket.send(JSON.stringify({'action': 'reply_status'}));
+                        }
+                    } else {
+                        statusElement.classList.replace('text-white', 'text-white-50');
+                        statusElement.classList.remove('fw-bold');
+                    }
+                }
+            }
+        } else if (data.type === 'messages_read') {
+            if (data.user_id !== userId) {
+                setTimeout(loadMessages, 300);
+            }
+        } else if (data.type === 'chat_update' || data.type === 'chat_message') {
+            loadMessages();
+            setTimeout(() => {
+                if (chatSocket.readyState === WebSocket.OPEN) {
+                    chatSocket.send(JSON.stringify({'action': 'mark_as_read'}));
+                }
+            }, 500);
+        }
+    };
+
+    const msgForm = document.getElementById('message-form');
+    if (msgForm) {
+        msgForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            const messageContent = messageInput.value.trim();
+
+            if (messageContent) {
+                fetch(`/conversations/${conversationId}/messages/send/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    },
+                    body: JSON.stringify({ content: messageContent })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.banned) {
+                        alert(data.message || 'Tu cuenta ha sido suspendida.');
+                        window.location.href = '/accounts/login/';
+                        return;
+                    }
+                    messageInput.value = '';
+                    loadMessages();
+                    if (chatSocket.readyState === WebSocket.OPEN) {
+                        chatSocket.send(JSON.stringify({ 'action': 'actualizar_chat' }));
+                    }
+                });
+            }
+        });
+    }
+
+    function openReportModal(messageId) {
+        document.getElementById('report-message-id').value = messageId;
+        document.getElementById('report-reason').value = '';
+        new bootstrap.Modal(document.getElementById('reportMessageModal')).show();
+    }
+
+    function submitMessageReport() {
+        const messageId = document.getElementById('report-message-id').value;
+        const reason = document.getElementById('report-reason').value.trim();
+        if (!reason) {
+            alert('Por favor, especifica un motivo para el reporte.');
+            return;
+        }
+
+        fetch(`/mensajes/reportar/${messageId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+            body: JSON.stringify({ reason: reason })
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.status || 'Reporte enviado exitosamente.');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('reportMessageModal'));
+            if (modal) modal.hide();
+        });
+    }
+</script>
+{% endblock %}

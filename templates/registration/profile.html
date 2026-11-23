@@ -1,0 +1,339 @@
+{% extends 'base/base.html' %}
+
+{% block titulo %}
+Mi Perfil y Seguimiento | RexMarket
+{% endblock %}
+
+{% block contenido %}
+
+<style>
+  .gradient-custom {
+    background: linear-gradient(135deg, #ff8c00, #ff5722);
+  }
+  .nav-pills .nav-link.active {
+    background-color: #ff8c00;
+    color: #fff;
+    font-weight: 600;
+  }
+  .nav-pills .nav-link {
+    color: #495057;
+    font-weight: 500;
+  }
+</style>
+
+<section class="py-5">
+  <div class="container">
+    <div class="row d-flex justify-content-center">
+      <div class="col-lg-11">
+        <!-- Tarjeta de Perfil -->
+        <div class="card mb-4 shadow-sm border-0" style="border-radius: .75rem;">
+          <div class="row g-0">
+            <div class="col-md-4 gradient-custom text-center text-white p-4 d-flex flex-column align-items-center justify-content-center"
+              style="border-top-left-radius: .75rem; border-bottom-left-radius: .75rem;">
+              <img src="https://mdbcdn.b-cdn.net/img/Photos/new-templates/bootstrap-chat/ava1-bg.webp"
+                alt="Avatar" class="img-fluid rounded-circle mb-3 border border-3 border-white shadow-sm" style="width: 120px;" />
+              <h5 class="fs-4 fw-bold mb-1">{{ user.first_name }} {{ user.last_name }}</h5>
+              <span class="badge bg-light text-dark mb-3">
+                <i class="bi bi-building me-1 text-danger"></i>{{ user.perfil.sede.nombre|default:"Sede no asignada" }}
+              </span>
+
+              <button type="button" class="btn btn-outline-light btn-sm mt-1" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
+                <i class="bi bi-trash3 me-1"></i>Eliminar Cuenta
+              </button>
+            </div>
+
+            <div class="col-md-8 bg-white" style="border-top-right-radius: .75rem; border-bottom-right-radius: .75rem;">
+              <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+                  <h6 class="fs-5 fw-bold mb-0">Información de Estudiante</h6>
+                  {% if pedidos_activos_count > 0 %}
+                    <span class="badge bg-primary rounded-pill px-3 py-2">
+                      <i class="bi bi-truck me-1"></i>{{ pedidos_activos_count }} seguimiento{{ pedidos_activos_count|pluralize:"s" }} activo{{ pedidos_activos_count|pluralize:"s" }}
+                    </span>
+                  {% endif %}
+                </div>
+
+                <div class="row mb-3">
+                  <div class="col-sm-6 mb-2">
+                    <small class="fw-bold text-secondary text-uppercase">Nombre Completo</small>
+                    <p class="fs-6 text-dark mb-0">{{ user.first_name }} {{ user.last_name }}</p>
+                  </div>
+                  <div class="col-sm-6 mb-2">
+                    <small class="fw-bold text-secondary text-uppercase">Correo Institucional</small>
+                    <p class="fs-6 text-dark mb-0">{{ user.email }}</p>
+                  </div>
+                  <div class="col-sm-6 mb-2">
+                    <small class="fw-bold text-secondary text-uppercase">RUT</small>
+                    <p class="fs-6 text-dark mb-0">{{ user.username }}</p>
+                  </div>
+                  <div class="col-sm-6 mb-2">
+                    <small class="fw-bold text-secondary text-uppercase">Sede INACAP</small>
+                    <p class="fs-6 text-dark mb-0">{{ user.perfil.sede.nombre|default:"Sin sede configurada" }}</p>
+                  </div>
+                </div>
+
+                <h6 class="fs-6 fw-bold border-bottom pb-2 mb-2 text-secondary">Estado y Conducta en Plataforma</h6>
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                  <div>
+                    {% with adv=user.perfil.advertencias %}
+                      {% if adv == 0 %}
+                        <span class="badge bg-success fs-6 py-2 px-3">0 / 3 Advertencias (Cuenta Limpia)</span>
+                      {% elif adv == 1 %}
+                        <span class="badge bg-warning text-dark fs-6 py-2 px-3">1 / 3 Advertencias</span>
+                      {% elif adv == 2 %}
+                        <span class="badge bg-danger fs-6 py-2 px-3">2 / 3 Advertencias (Último aviso)</span>
+                      {% else %}
+                        <span class="badge bg-dark fs-6 py-2 px-3">Cuenta Suspendida (3 / 3)</span>
+                      {% endif %}
+                    {% endwith %}
+                  </div>
+                  <small class="text-muted">Acumular 3 advertencias suspende la cuenta.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel Centralizado de Trazabilidad (Compras, Ventas y Publicaciones) -->
+        <div class="card shadow-sm border-0 p-3 p-md-4 mb-4" style="border-radius: .75rem;">
+          <ul class="nav nav-pills mb-4 border-bottom pb-3 gap-2" id="profileTrackingTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="tab-compras-btn" data-bs-toggle="pill" data-bs-target="#tab-compras" type="button" role="tab">
+                <i class="bi bi-bag-check-fill me-1"></i>Mis Compras ({{ mis_compras|length }})
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="tab-ventas-btn" data-bs-toggle="pill" data-bs-target="#tab-ventas" type="button" role="tab">
+                <i class="bi bi-box-seam-fill me-1"></i>Mis Ventas y Entregas ({{ mis_ventas|length }})
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="tab-productos-btn" data-bs-toggle="pill" data-bs-target="#tab-productos" type="button" role="tab">
+                <i class="bi bi-tags-fill me-1"></i>Mis Publicaciones ({{ mis_productos|length }})
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content" id="profileTrackingTabsContent">
+            <!-- PESTAÑA 1: MIS COMPRAS -->
+            <div class="tab-pane fade show active" id="tab-compras" role="tabpanel">
+              {% if mis_compras %}
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Producto</th>
+                        <th>Vendedor</th>
+                        <th>Modalidad / Detalle</th>
+                        <th>Estado</th>
+                        <th class="text-end">Seguimiento</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for pedido in mis_compras %}
+                        <tr>
+                          <td class="fw-bold">
+                            {% if pedido.conversacion.producto %}
+                              {{ pedido.conversacion.producto.nombre }}
+                              <div class="small text-success">${{ pedido.conversacion.producto.precio }}</div>
+                            {% else %}
+                              Pedido #{{ pedido.id }}
+                            {% endif %}
+                          </td>
+                          <td>{{ pedido.vendedor.first_name }} {{ pedido.vendedor.last_name }}</td>
+                          <td>
+                            {% if pedido.tipo_entrega == 'envio' %}
+                              <span class="badge bg-info text-dark"><i class="bi bi-truck me-1"></i>{{ pedido.empresa_envio }}</span>
+                              {% if pedido.codigo_seguimiento %}
+                                <div class="small text-muted mt-1">Código: <strong>{{ pedido.codigo_seguimiento }}</strong></div>
+                              {% endif %}
+                            {% else %}
+                              <span class="badge bg-light text-dark border"><i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ pedido.lugar_nombre }}</span>
+                              {% if pedido.estado != 'completado' and pedido.estado != 'cancelado_inasistencia' and pedido.estado != 'rechazado' %}
+                                <div class="small text-success fw-bold mt-1">PIN: {{ pedido.pin_seguridad }}</div>
+                              {% endif %}
+                            {% endif %}
+                          </td>
+                          <td>
+                            {% if pedido.estado == 'completado' %}
+                              <span class="badge bg-success">{{ pedido.get_estado_display }}</span>
+                            {% elif pedido.estado == 'cancelado_inasistencia' or pedido.estado == 'rechazado' %}
+                              <span class="badge bg-danger">{{ pedido.get_estado_display }}</span>
+                            {% else %}
+                              <span class="badge bg-primary">{{ pedido.get_estado_display }}</span>
+                            {% endif %}
+                          </td>
+                          <td class="text-end">
+                            <a href="{% url 'conversation_detail' pedido.conversacion.id %}" class="btn btn-sm btn-primary fw-semibold">
+                              <i class="bi bi-chat-dots-fill me-1"></i>Ir al Seguimiento
+                            </a>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="alert alert-light border text-center text-muted mb-0">
+                  Aún no has coordinado compras en RexMarket.
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- PESTAÑA 2: MIS VENTAS Y ENTREGAS -->
+            <div class="tab-pane fade" id="tab-ventas" role="tabpanel">
+              {% if mis_ventas %}
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Producto</th>
+                        <th>Comprador</th>
+                        <th>Modalidad / Punto</th>
+                        <th>Estado</th>
+                        <th class="text-end">Gestión</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for pedido in mis_ventas %}
+                        <tr>
+                          <td class="fw-bold">
+                            {% if pedido.conversacion.producto %}
+                              {{ pedido.conversacion.producto.nombre }}
+                              <div class="small text-success">${{ pedido.conversacion.producto.precio }}</div>
+                            {% else %}
+                              Venta #{{ pedido.id }}
+                            {% endif %}
+                          </td>
+                          <td>{{ pedido.comprador.first_name }} {{ pedido.comprador.last_name }}</td>
+                          <td>
+                            {% if pedido.tipo_entrega == 'envio' %}
+                              <span class="badge bg-info text-dark"><i class="bi bi-truck me-1"></i>{{ pedido.empresa_envio }}</span>
+                              <div class="small text-muted mt-1">{{ pedido.direccion_envio|truncatechars:40 }}</div>
+                            {% else %}
+                              <span class="badge bg-light text-dark border"><i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ pedido.lugar_nombre }}</span>
+                            {% endif %}
+                          </td>
+                          <td>
+                            {% if pedido.estado == 'completado' %}
+                              <span class="badge bg-success">{{ pedido.get_estado_display }}</span>
+                            {% elif pedido.estado == 'cancelado_inasistencia' or pedido.estado == 'rechazado' %}
+                              <span class="badge bg-danger">{{ pedido.get_estado_display }}</span>
+                            {% else %}
+                              <span class="badge bg-warning text-dark">{{ pedido.get_estado_display }}</span>
+                            {% endif %}
+                          </td>
+                          <td class="text-end">
+                            <a href="{% url 'conversation_detail' pedido.conversacion.id %}" class="btn btn-sm btn-outline-primary fw-semibold">
+                              <i class="bi bi-box-arrow-up-right me-1"></i>Gestionar Entrega
+                            </a>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="alert alert-light border text-center text-muted mb-0">
+                  No tienes entregas o ventas coordinadas todavía.
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- PESTAÑA 3: MIS PUBLICACIONES -->
+            <div class="tab-pane fade" id="tab-productos" role="tabpanel">
+              {% if mis_productos %}
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th scope="col" style="width: 55px;">Foto</th>
+                        <th scope="col">Producto</th>
+                        <th scope="col" class="d-none d-md-table-cell">Sede</th>
+                        <th scope="col">Precio</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col" class="text-end">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for prod in mis_productos %}
+                        <tr>
+                          <td>
+                            {% if prod.imagen %}
+                              <img src="{{ prod.imagen.url }}" alt="{{ prod.nombre }}" class="rounded border" style="width: 45px; height: 45px; object-fit: cover;">
+                            {% else %}
+                              <div class="bg-light rounded text-center text-muted small d-flex align-items-center justify-content-center border" style="width: 45px; height: 45px;">S/I</div>
+                            {% endif %}
+                          </td>
+                          <td>
+                            <div class="fw-bold text-dark text-truncate" style="max-width: 190px;">{{ prod.nombre }}</div>
+                            <small class="text-muted">{{ prod.get_categoria_display }}</small>
+                          </td>
+                          <td class="d-none d-md-table-cell">
+                            <small class="text-muted">{{ prod.sede.nombre|default:"-" }}</small>
+                          </td>
+                          <td class="fw-bold text-success">${{ prod.precio }}</td>
+                          <td>
+                            {% if prod.vendido %}
+                              <span class="badge bg-secondary">Vendido</span>
+                            {% elif not prod.comision_pagada %}
+                              <span class="badge bg-warning text-dark">Pago 2% Pendiente</span>
+                            {% elif prod.activo %}
+                              <span class="badge bg-success">Publicado</span>
+                            {% else %}
+                              <span class="badge bg-danger">Oculto</span>
+                            {% endif %}
+                          </td>
+                          <td class="text-end">
+                            {% if not prod.comision_pagada and not prod.vendido %}
+                              <a href="{% url 'reintentar_pago_comision' prod.id %}" class="btn btn-sm btn-warning fw-bold">
+                                <i class="bi bi-credit-card me-1"></i>Pagar 2%
+                              </a>
+                            {% else %}
+                              <a href="{% url 'detalle_producto' prod.id %}" class="btn btn-sm btn-outline-primary px-3">
+                                Ver
+                              </a>
+                            {% endif %}
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="alert alert-info text-center mb-0">
+                  No tienes productos publicados actualmente.
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Modal de Confirmación -->
+<div class="modal fade" id="deleteAccountModal" tabindex="-1" aria-labelledby="deleteAccountModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteAccountModalLabel">Confirmar Eliminación</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        ¿Estás seguro de que deseas eliminar tu cuenta? Esta acción no se puede deshacer.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <form method="post" action="{% url 'delete_account' %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger">Eliminar Cuenta</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

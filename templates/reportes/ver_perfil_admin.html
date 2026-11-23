@@ -1,0 +1,115 @@
+{% extends 'base/base.html' %}
+
+{% block titulo %}Perfil de {{ usuario_target.username }} | Administración{% endblock %}
+
+{% block contenido %}
+<div class="container py-4">
+  <div class="mb-3">
+    <a href="{% url 'gestion_usuarios' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i> Volver a Gestión de Usuarios
+    </a>
+  </div>
+
+  <div class="row">
+    <!-- Información General y Acciones -->
+    <div class="col-lg-4 mb-4">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-dark text-white fw-bold">
+          <i class="bi bi-person-badge me-2"></i>Ficha del Usuario
+        </div>
+        <div class="card-body text-center">
+          <img src="https://mdbcdn.b-cdn.net/img/Photos/new-templates/bootstrap-chat/ava1-bg.webp" alt="Avatar" class="img-fluid rounded-circle mb-3" style="width: 100px;">
+          <h5 class="fw-bold mb-1">{{ usuario_target.first_name }} {{ usuario_target.last_name }}</h5>
+          <p class="text-muted small mb-1"><strong>RUT:</strong> {{ usuario_target.username }}</p>
+          <p class="text-muted small mb-3"><strong>Email:</strong> {{ usuario_target.email }}</p>
+
+          <hr>
+
+          <h6 class="fw-bold text-secondary mb-2">Estado y Advertencias</h6>
+          <div class="mb-3">
+            {% if perfil.esta_baneado or not usuario_target.is_active %}
+              <span class="badge bg-dark fs-6 px-3 py-2">Cuenta Suspendida / Baneada</span>
+            {% elif perfil.advertencias == 2 %}
+              <span class="badge bg-danger fs-6 px-3 py-2">2 / 3 Advertencias (Riesgo alto)</span>
+            {% elif perfil.advertencias == 1 %}
+              <span class="badge bg-warning text-dark fs-6 px-3 py-2">1 / 3 Advertencias</span>
+            {% else %}
+              <span class="badge bg-success fs-6 px-3 py-2">0 / 3 Advertencias (Sin faltas)</span>
+            {% endif %}
+          </div>
+
+          <form method="post" action="{% url 'sumar_advertencia_admin' usuario_target.id %}" class="mb-2">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-warning btn-sm w-100" onclick="return confirm('¿Añadir 1 advertencia a este usuario?');">
+              <i class="bi bi-exclamation-triangle"></i> Sumar Advertencia (+1)
+            </button>
+          </form>
+
+          <form method="post" action="{% url 'cambiar_estado_usuario' usuario_target.id %}">
+            {% csrf_token %}
+            {% if usuario_target.is_active %}
+              <button type="submit" class="btn btn-danger btn-sm w-100" onclick="return confirm('¿Suspender inmediatamente a este usuario?');">
+                <i class="bi bi-slash-circle"></i> Banear Cuenta
+              </button>
+            {% else %}
+              <button type="submit" class="btn btn-success btn-sm w-100" onclick="return confirm('¿Restaurar acceso a este usuario?');">
+                <i class="bi bi-check-circle"></i> Desbanear Cuenta
+              </button>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Productos del Usuario -->
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-box-seam me-2"></i>Productos Publicados por este Usuario</span>
+          <span class="badge bg-light text-primary">{{ productos_usuario|length }} Total</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 50px;">Foto</th>
+                  <th>Nombre</th>
+                  <th>Categoría</th>
+                  <th>Precio</th>
+                  <th class="text-end">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for prod in productos_usuario %}
+                  <tr>
+                    <td>
+                      {% if prod.imagen %}
+                        <img src="{{ prod.imagen.url }}" alt="{{ prod.nombre }}" class="rounded" style="width: 40px; height: 40px; object-fit: cover;">
+                      {% else %}
+                        <div class="bg-light rounded text-center text-muted small py-2" style="width: 40px; height: 40px;">S/I</div>
+                      {% endif %}
+                    </td>
+                    <td class="fw-bold">{{ prod.nombre }}</td>
+                    <td><span class="badge bg-light text-dark border">{{ prod.get_categoria_display }}</span></td>
+                    <td class="text-success fw-bold">${{ prod.precio }}</td>
+                    <td class="text-end">
+                      <a href="{% url 'detalle_producto' prod.id %}" class="btn btn-sm btn-outline-primary" target="_blank">
+                        Ver Producto
+                      </a>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="5" class="text-center py-4 text-muted">Este usuario no posee productos en venta actualmente.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

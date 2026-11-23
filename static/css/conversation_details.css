@@ -1,0 +1,146 @@
+/* Bloquea el scroll de la página de fondo para que solo el chat tenga scroll */
+body {
+    overflow: hidden !important;
+    background-color: #d1d7db !important; 
+}
+
+/* Ocultar el footer solo en esta página */
+footer, .footer {
+    display: none !important;
+}
+
+/* CONTENEDOR PRINCIPAL FIX: Calcula la altura exacta respetando el Navbar */
+.chat-container-fullscreen {
+    position: fixed;
+    top: 65px; 
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: calc(100vh - 65px) !important;
+    background-color: #e5ddd5;
+    background-image: url('https://www.transparenttextures.com/patterns/cubes.png');
+    display: flex;
+    flex-direction: column;
+    z-index: 1000;
+}
+
+/* Transparencia para contenedores padre de base.html */
+main, #contenido-principal, .pb-5 { 
+    background-color: transparent !important;
+}
+
+/* Ajuste centrado y encajado para PC */
+@media (min-width: 992px) {
+    .chat-container-fullscreen {
+        width: 900px;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 75px;
+        bottom: 15px;
+        height: calc(100vh - 90px) !important;
+        box-shadow: 0 0 40px rgba(0,0,0,0.2); 
+        border-left: 1px solid #aebac1;
+        border-right: 1px solid #aebac1;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+}
+
+/* Encabezado */
+.chat-header-custom {
+    background-color: #0d6efd;
+    color: white;
+    padding: 10px 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    z-index: 10;
+    flex-shrink: 0; /* Evita que el header se aplaste */
+}
+
+/* Lista de mensajes con scroll responsivo */
+.message-list {
+    flex: 1 1 auto;
+    min-height: 0; /* IMPRESCINDIBLE: permite a flexbox encoger la lista y activar scroll */
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+}
+
+/* Diseño de las burbujas */
+.message-item {
+    max-width: 85%;
+    padding: 8px 14px;
+    border-radius: 12px;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    word-wrap: break-word;
+    display: inline-block;
+}
+
+.message-item.sent {
+    align-self: flex-end;
+    background-color: #dcf8c6; 
+    border-top-right-radius: 0;
+}
+
+.message-item.received {
+    align-self: flex-start;
+    background-color: #ffffff;
+    border-top-left-radius: 0;
+}
+
+.message-sender {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #0d6efd;
+    margin-bottom: 3px;
+    display: block;
+}
+
+.message-content {
+    margin: 0;
+    font-size: 1rem;
+    color: #303030;
+}
+
+.message-timestamp {
+    font-size: 0.7rem;
+    color: #888;
+    float: right;
+    margin-left: 12px;
+    margin-top: 6px;
+}
+
+/* Área del input fija en la parte inferior */
+.chat-input-area {
+    background-color: #f0f0f0;
+    padding: 12px 15px;
+    z-index: 10;
+    flex-shrink: 0; /* Asegura que el cuadro de envío nunca se despliegue fuera */
+}
+
+.chat-input-area input {
+    border-radius: 25px;
+    padding-left: 20px;
+}
+
+.btn-send {
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #0d6efd;
+    color: white;
+    border: none;
+    transition: transform 0.1s ease;
+}
+
+.btn-send:active {
+    transform: scale(0.9);
+    background-color: #0b5ed7;
+}

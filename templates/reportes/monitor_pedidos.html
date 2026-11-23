@@ -1,0 +1,318 @@
+{% extends 'base/base.html' %}
+
+{% block titulo %}
+    Monitor de Pedidos y Disputas | Administración
+{% endblock %}
+
+{% block contenido %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+
+<style>
+    body { background-color: #f8f9fa; }
+    .nav-admin-pills .nav-link { color: #495057; font-weight: 600; border-radius: 50rem; }
+    .nav-admin-pills .nav-link.active { background-color: #ff8c00; color: #fff; }
+    .card-admin-estatica,
+    .card-admin-estatica:hover {
+        transform: none !important;
+        overflow: visible !important;
+    }
+</style>
+
+<div class="container-fluid px-4 py-4 mb-5">
+
+    <!-- Encabezado -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-1"><i class="bi bi-truck text-primary me-2"></i>Monitor Central de Pedidos, Inasistencias y Disputas</h2>
+            <p class="text-muted mb-0 small">Auditoría cronológica de entregas presenciales en campus y encomiendas interregionales.</p>
+        </div>
+    </div>
+
+    <!-- Navegación Unificada -->
+    <ul class="nav nav-pills nav-admin-pills bg-white p-2 rounded-pill shadow-sm border mb-4 d-inline-flex flex-wrap gap-1">
+        <li class="nav-item"><a class="nav-link" href="{% url 'lista_reportes' %}"><i class="bi bi-tag-fill me-1"></i>Productos</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'reportes_comentarios' %}"><i class="bi bi-chat-left-quote-fill me-1"></i>Comentarios</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'lista_reportes_mensajes' %}"><i class="bi bi-shield-exclamation me-1"></i>Mensajes / IA</a></li>
+        <li class="nav-item"><a class="nav-link active" href="{% url 'monitor_pedidos_admin' %}"><i class="bi bi-truck me-1"></i>Pedidos y Disputas</a></li>
+        {% if request.user.is_superuser %}
+        <li class="nav-item"><a class="nav-link" href="{% url 'gestion_usuarios' %}"><i class="bi bi-people-fill me-1"></i>Usuarios</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'bitacora_auditoria_admin' %}"><i class="bi bi-journal-check me-1"></i>Bitácora Auditoría</a></li>
+        {% endif %}
+    </ul>
+
+    <!-- KPIs Rápidos -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card card-admin-estatica border-0 shadow-sm border-start border-dark border-4 h-100">
+                <div class="card-body">
+                    <small class="text-muted fw-bold text-uppercase">Total Coordinaciones</small>
+                    <h3 class="fw-bold mb-0 mt-1">{{ stats.total }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card card-admin-estatica border-0 shadow-sm border-start border-primary border-4 h-100">
+                <div class="card-body">
+                    <small class="text-muted fw-bold text-uppercase">En Curso / Activos</small>
+                    <h3 class="fw-bold text-primary mb-0 mt-1">{{ stats.activos }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card card-admin-estatica border-0 shadow-sm border-start border-success border-4 h-100">
+                <div class="card-body">
+                    <small class="text-muted fw-bold text-uppercase">Completados</small>
+                    <h3 class="fw-bold text-success mb-0 mt-1">{{ stats.completados }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card card-admin-estatica border-0 shadow-sm border-start border-danger border-4 h-100">
+                <div class="card-body">
+                    <small class="text-muted fw-bold text-uppercase">Inasistencias / Anulados</small>
+                    <h3 class="fw-bold text-danger mb-0 mt-1">{{ stats.inasistencias }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card card-admin-estatica border-0 shadow-sm mb-4">
+        <div class="card-body py-3">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted mb-1">Filtrar por Estado</label>
+                    <select name="estado" class="form-select form-select-sm">
+                        <option value="" {% if not filtro_estado %}selected{% endif %}>Todos los pedidos</option>
+                        <option value="activos" {% if filtro_estado == 'activos' %}selected{% endif %}>En curso / Activos</option>
+                        <option value="completados" {% if filtro_estado == 'completados' %}selected{% endif %}>Completados</option>
+                        <option value="inasistencias" {% if filtro_estado == 'inasistencias' %}selected{% endif %}>Cancelados por Inasistencia</option>
+                        <option value="anulados" {% if filtro_estado == 'anulados' %}selected{% endif %}>Anulados por Administración</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-muted mb-1">Filtrar por Sede</label>
+                    <select name="sede" class="form-select form-select-sm">
+                        <option value="">Todas las sedes</option>
+                        {% for sede in sedes_activas %}
+                            <option value="{{ sede.id }}" {% if sede_seleccionada == sede.id|stringformat:"s" %}selected{% endif %}>{{ sede.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold px-3"><i class="bi bi-funnel me-1"></i>Aplicar</button>
+                    <a href="{% url 'monitor_pedidos_admin' %}" class="btn btn-outline-secondary btn-sm">Limpiar</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tabla de Pedidos -->
+    <div class="card card-admin-estatica border-0 shadow-sm border-top border-primary border-3 rounded-3">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="tabla-pedidos-admin" class="table table-hover table-striped table-bordered align-middle w-100">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Producto / Sede</th>
+                            <th>Modalidad</th>
+                            <th>Comprador</th>
+                            <th>Vendedor</th>
+                            <th>Estado</th>
+                            <th>Fecha</th>
+                            <th>Auditoría y Mediación</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pedido in pedidos %}
+                        <tr>
+                            <td class="fw-bold">#{{ pedido.id }}</td>
+                            <td>
+                                {% if pedido.conversacion.producto %}
+                                    <div class="fw-bold text-dark">{{ pedido.conversacion.producto.nombre }}</div>
+                                    <span class="badge bg-dark" style="font-size: 0.7rem;">{{ pedido.conversacion.producto.sede.nombre|default:"Sin sede" }}</span>
+                                    <span class="small text-success fw-bold ms-1">${{ pedido.conversacion.producto.precio }}</span>
+                                {% else %}
+                                    <span class="text-muted">Sin producto</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if pedido.tipo_entrega == 'envio' %}
+                                    <span class="badge bg-info text-dark"><i class="bi bi-truck me-1"></i>Envío ({{ pedido.empresa_envio }})</span>
+                                    {% if pedido.codigo_seguimiento %}
+                                        <div class="small text-muted mt-1">Tracking: <strong>{{ pedido.codigo_seguimiento }}</strong></div>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="badge bg-light text-dark border"><i class="bi bi-geo-alt-fill text-danger me-1"></i>Presencial</span>
+                                    <div class="small text-muted mt-1 text-truncate" style="max-width: 180px;">{{ pedido.lugar_nombre }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="small fw-bold">{{ pedido.comprador.first_name }} {{ pedido.comprador.last_name }}</div>
+                                <div class="small text-muted">{{ pedido.comprador.username }}</div>
+                            </td>
+                            <td>
+                                <div class="small fw-bold">{{ pedido.vendedor.first_name }} {{ pedido.vendedor.last_name }}</div>
+                                <div class="small text-muted">{{ pedido.vendedor.username }}</div>
+                            </td>
+                            <td>
+                                {% if pedido.estado == 'completado' %}
+                                    <span class="badge bg-success">{{ pedido.get_estado_display }}</span>
+                                {% elif pedido.estado == 'cancelado_inasistencia' %}
+                                    <span class="badge bg-danger">{{ pedido.get_estado_display }}</span>
+                                    {% if pedido.usuario_ausente %}
+                                        <div class="small text-danger fw-bold mt-1">Faltó: {{ pedido.usuario_ausente.username }}</div>
+                                    {% endif %}
+                                {% elif pedido.estado == 'cancelado_admin' %}
+                                    <span class="badge bg-dark">Anulado Admin</span>
+                                {% else %}
+                                    <span class="badge bg-primary">{{ pedido.get_estado_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td data-order="{{ pedido.fecha_creacion|date:'Y-m-d H:i:s' }}">
+                                {{ pedido.fecha_creacion|date:"d/m/Y H:i" }}
+                            </td>
+                            <td>
+                                <div class="d-flex flex-column gap-1">
+                                    <button type="button" class="btn btn-info btn-sm text-white fw-semibold" data-bs-toggle="modal" data-bs-target="#cronologiaModal{{ pedido.id }}">
+                                        <i class="bi bi-clock-history me-1"></i>Cronología
+                                    </button>
+                                    <a href="{% url 'conversation_detail' pedido.conversacion.id %}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-chat-text me-1"></i>Ver Chat
+                                    </a>
+                                    {% if pedido.estado != 'completado' and pedido.estado != 'cancelado_inasistencia' and pedido.estado != 'cancelado_admin' and pedido.estado != 'rechazado' %}
+                                        <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#intervenirModal{{ pedido.id }}">
+                                            <i class="bi bi-shield-fill-exclamation me-1"></i>Mediar / Anular
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODALES FUERA DE LA TABLA Y DE .card PARA EVITAR CONFLICTO DE Z-INDEX CON .modal-backdrop -->
+{% for pedido in pedidos %}
+    <!-- Modal de Cronología Forense -->
+    <div class="modal fade" id="cronologiaModal{{ pedido.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-clock-history me-2"></i>Auditoría Cronológica — Pedido #{{ pedido.id }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <strong>1. Inicio de Coordinación:</strong> Propuesto por
+                            <span class="badge bg-secondary">{{ pedido.propuesto_por.username|default:"N/A" }}</span>
+                            el {{ pedido.fecha_creacion|date:"d/m/Y H:i:s" }}.
+                        </li>
+                        {% if pedido.tipo_entrega == 'presencial' %}
+                            <li class="list-group-item">
+                                <strong>2. Punto Pactado en Campus:</strong> {{ pedido.lugar_nombre }}
+                                <div class="small text-muted">Coordenadas GPS: {{ pedido.latitud }}, {{ pedido.longitud }} | PIN Seguridad: <code>{{ pedido.pin_seguridad }}</code></div>
+                            </li>
+                            <li class="list-group-item">
+                                <strong>3. Registro de Llegada al Punto:</strong>
+                                {% if pedido.quien_llego_primero %}
+                                    Llegó primero <strong>{{ pedido.quien_llego_primero.first_name }} ({{ pedido.quien_llego_primero.username }})</strong>
+                                    a las <strong>{{ pedido.fecha_llegada_sitio|date:"d/m/Y H:i:s" }}</strong>.
+                                {% else %}
+                                    <span class="text-muted">Aún sin registro de llegada en sitio.</span>
+                                {% endif %}
+                            </li>
+                        {% else %}
+                            <li class="list-group-item">
+                                <strong>2. Datos de Encomienda:</strong> Empresa <strong>{{ pedido.empresa_envio }}</strong> — Destino: {{ pedido.direccion_envio }}
+                            </li>
+                            <li class="list-group-item">
+                                <strong>3. Código de Seguimiento:</strong> <code>{{ pedido.codigo_seguimiento|default:"Pendiente de despacho" }}</code>
+                            </li>
+                        {% endif %}
+                        <li class="list-group-item">
+                            <strong>4. Estado Actual:</strong> {{ pedido.get_estado_display }} (Última actualización: {{ pedido.fecha_actualizacion|date:"d/m/Y H:i:s" }})
+                            {% if pedido.usuario_ausente %}
+                                <div class="alert alert-danger py-2 px-3 mt-2 mb-0 small">
+                                    <strong>Inasistencia Confirmada:</strong> {{ pedido.usuario_ausente.first_name }} ({{ pedido.usuario_ausente.username }}) — Inasistencias acumuladas: {{ pedido.usuario_ausente.perfil.inasistencias }}.
+                                </div>
+                            {% endif %}
+                            {% if pedido.resolucion_admin %}
+                                <div class="alert alert-warning py-2 px-3 mt-2 mb-0 small">
+                                    <strong>Intervención Administrativa:</strong> {{ pedido.resolucion_admin }}
+                                </div>
+                            {% endif %}
+                        </li>
+                    </ul>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Mediación / Anulación Administrativa -->
+    {% if pedido.estado != 'completado' and pedido.estado != 'cancelado_inasistencia' and pedido.estado != 'cancelado_admin' and pedido.estado != 'rechazado' %}
+    <div class="modal fade" id="intervenirModal{{ pedido.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-shield-fill-exclamation me-2"></i>Mediar / Anular Pedido #{{ pedido.id }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <form method="post" action="{% url 'intervenir_pedido_admin' pedido.id %}">
+                    {% csrf_token %}
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">¿Aplicar advertencia (+1) por falta comprobada?</label>
+                            <select name="sancionar_usuario" class="form-select">
+                                <option value="ninguno" selected>No sancionar (solo anular operación)</option>
+                                <option value="comprador">Sancionar al Comprador ({{ pedido.comprador.username }})</option>
+                                <option value="vendedor">Sancionar al Vendedor ({{ pedido.vendedor.username }})</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label fw-bold small">Dictamen / Motivo de Resolución (Obligatorio)</label>
+                            <textarea name="motivo_resolucion" class="form-control" rows="3" required minlength="8" placeholder="Describe la evidencia revisada en el chat o tracking..."></textarea>
+                        </div>
+                        <small class="text-muted">Esta acción quedará registrada con tu usuario e IP en la Bitácora de Auditoría.</small>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-danger fw-bold">Confirmar Anulación</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+{% endfor %}
+
+<script>
+    $(document).ready(function () {
+        $('#tabla-pedidos-admin').DataTable({
+            "language": {
+                "lengthMenu": "Mostrar _MENU_ pedidos",
+                "zeroRecords": "No se encontraron pedidos",
+                "emptyTable": "No hay pedidos registrados.",
+                "info": "Mostrando _START_ a _END_ de _TOTAL_",
+                "infoEmpty": "Mostrando 0 a 0 de 0",
+                "search": "Buscar:",
+                "paginate": { "first": "Primero", "last": "Último", "next": "Siguiente", "previous": "Anterior" }
+            },
+            "order": [[6, "desc"]],
+            "stateSave": true
+        });
+    });
+</script>
+{% endblock %}

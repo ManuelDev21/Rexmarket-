@@ -1,0 +1,148 @@
+{% extends "base/base.html" %}
+
+{% block titulo %}
+    Mensajes | RexMarket
+{% endblock %}
+
+{% block contenido %}
+<style>
+    .chat-list-item {
+        transition: background-color 0.2s ease;
+        cursor: pointer;
+    }
+    .chat-list-item:hover {
+        background-color: #f8f9fa;
+    }
+    .z-3 {
+        z-index: 3;
+    }
+    .min-width-0 {
+        min-width: 0;
+    }
+    .chat-product-thumb {
+        width: 44px;
+        height: 44px;
+        object-fit: cover;
+        border-radius: 10px;
+    }
+</style>
+
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-md-10">
+            
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+                <div class="card-header bg-white border-bottom pt-4 pb-3">
+                    <h3 class="fw-bold mb-0"><i class="bi bi-chat-dots-fill text-primary me-2"></i>Mis Mensajes</h3>
+                </div>
+                
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for item in chat_items %}
+                        
+                        <div class="list-group-item chat-list-item d-flex justify-content-between align-items-center p-3 border-bottom position-relative">
+                            
+                            <a href="{% url 'conversation_detail' item.conversation.id %}" class="d-flex align-items-center text-decoration-none text-dark w-100 stretched-link">
+                                <div class="bg-primary text-white rounded-circle d-flex justify-content-center align-items-center fw-bold me-3 shadow-sm flex-shrink-0" style="width: 52px; height: 52px; font-size: 1.3rem;">
+                                    {{ item.contact.first_name|slice:":1"|upper }}{{ item.contact.last_name|slice:":1"|upper }}
+                                </div>
+                                
+                                <div class="flex-grow-1 min-width-0 pe-3">
+                                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                                        <h6 class="mb-0 fw-bold text-truncate text-dark">
+                                            {{ item.contact.first_name }} {{ item.contact.last_name }}
+                                        </h6>
+                                        
+                                        <div class="d-flex align-items-center">
+                                            {% if item.unread_count > 0 %}
+                                                <span class="badge bg-danger rounded-pill me-2 shadow-sm">{{ item.unread_count }}</span>
+                                            {% endif %}
+                                            <small class="text-muted ms-1 text-nowrap">{{ item.last_message.timestamp|date:"H:i" }}</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- Etiqueta del producto asociado al chat -->
+                                    {% if item.producto %}
+                                    <div class="mb-1 d-flex align-items-center gap-2 flex-wrap">
+                                        <span class="badge bg-light text-dark border fw-semibold text-truncate" style="max-width: 240px;">
+                                            <i class="bi bi-bag-fill text-primary me-1"></i>{{ item.producto.nombre }} (${{ item.producto.precio }})
+                                        </span>
+                                        {% if item.producto.vendido %}
+                                            <span class="badge bg-secondary">Vendido</span>
+                                        {% elif item.producto.reservado %}
+                                            <span class="badge bg-warning text-dark">Reservado</span>
+                                        {% else %}
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle">Disponible</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                    
+                                    <p class="mb-0 text-truncate small {% if item.unread_count > 0 %}fw-bold text-dark{% else %}text-muted{% endif %}">
+                                        {% if item.last_message.sender == request.user %}
+                                            <i class="bi bi-check2-all text-primary me-1"></i> 
+                                        {% endif %}
+                                        {{ item.last_message.content|default:"Sin mensajes aún" }}
+                                    </p>
+                                </div>
+
+                                {% if item.producto and item.producto.imagen %}
+                                    <img src="{{ item.producto.imagen.url }}" alt="{{ item.producto.nombre }}" class="chat-product-thumb border me-3 d-none d-sm-block flex-shrink-0">
+                                {% endif %}
+                            </a>
+                            
+                            <div class="position-relative z-3">
+                                <button class="btn btn-light btn-sm rounded-circle border" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                                    <li>
+                                        <button class="dropdown-item text-danger fw-semibold" data-bs-toggle="modal" data-bs-target="#hideChatModal{{ item.conversation.id }}">
+                                            <i class="bi bi-trash3-fill me-2"></i> Eliminar chat
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        {% empty %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-chat-square-dots display-1 text-muted opacity-50 mb-3 d-block"></i>
+                            <h5 class="text-muted fw-bold">Bandeja vacía</h5>
+                            <p class="text-muted small">No tienes conversaciones activas en este momento.</p>
+                            <a href="{% url 'home' %}" class="btn btn-outline-primary mt-2">Ir a la tienda</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+{% for item in chat_items %}
+<div class="modal fade" id="hideChatModal{{ item.conversation.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-danger">Ocultar conversación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                ¿Estás seguro de que deseas ocultar la conversación con <strong>{{ item.contact.first_name }}</strong>
+                {% if item.producto %} sobre <strong>{{ item.producto.nombre }}</strong>{% endif %}?<br>
+                <span class="text-muted small mt-2 d-block">Esto solo limpiará tu bandeja, pero mantiene el historial de seguridad si vuelven a hablar.</span>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                <form action="{% url 'ocultar_conversacion' item.conversation.id %}" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Ocultar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}

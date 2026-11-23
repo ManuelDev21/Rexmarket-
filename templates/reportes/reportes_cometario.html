@@ -1,0 +1,361 @@
+{% extends 'base/base.html' %}
+
+{% block titulo %}
+    Reportes de Comentarios | Administración
+{% endblock %}
+
+{% block contenido %}
+
+<!-- CSS y JS de DataTables -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+
+<style>
+    body { background-color: #f8f9fa; }
+    .texto-celda { max-width: 260px; word-wrap: break-word; white-space: pre-wrap; }
+    .nav-admin-pills .nav-link { color: #495057; font-weight: 600; border-radius: 50rem; transition: all 0.2s ease; }
+    .nav-admin-pills .nav-link:hover { background-color: #fff3e6; color: #ff8c00; }
+    .nav-admin-pills .nav-link.active { background-color: #ff8c00 !important; color: #fff !important; }
+    .card-admin-estatica,
+    .card-admin-estatica:hover {
+        transform: none !important;
+        overflow: visible !important;
+    }
+</style>
+
+<div class="container-fluid px-4 py-4 mb-5">
+
+    <!-- Encabezado y Estado WebSocket -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-1"><i class="bi bi-chat-left-quote-fill text-primary me-2"></i>Gestión de Reportes de Comentarios</h2>
+            <p class="text-muted mb-0 small">Moderación de reseñas y valoraciones denunciadas en publicaciones.</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span id="ws-status" class="badge bg-secondary px-3 py-2">
+                <i class="bi bi-circle-fill me-1"></i>Conectando tiempo real...
+            </span>
+        </div>
+    </div>
+
+    <!-- Navegación Rápida entre Módulos de Moderación -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <ul class="nav nav-pills nav-admin-pills bg-white p-2 rounded-pill shadow-sm border flex-wrap gap-1">
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'lista_reportes' %}active{% endif %}" href="{% url 'lista_reportes' %}">
+                    <i class="bi bi-tag-fill me-1"></i>Productos
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'reportes_comentarios' %}active{% endif %}" href="{% url 'reportes_comentarios' %}">
+                    <i class="bi bi-chat-left-quote-fill me-1"></i>Comentarios
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'lista_reportes_mensajes' %}active{% endif %}" href="{% url 'lista_reportes_mensajes' %}">
+                    <i class="bi bi-shield-exclamation me-1"></i>Mensajes / IA
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'monitor_pedidos_admin' %}active{% endif %}" href="{% url 'monitor_pedidos_admin' %}">
+                    <i class="bi bi-truck me-1"></i>Pedidos y Disputas
+                </a>
+            </li>
+            {% if request.user.is_superuser %}
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'gestion_usuarios' %}active{% endif %}" href="{% url 'gestion_usuarios' %}">
+                    <i class="bi bi-people-fill me-1"></i>Usuarios
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'bitacora_auditoria_admin' %}active{% endif %}" href="{% url 'bitacora_auditoria_admin' %}">
+                    <i class="bi bi-journal-check me-1"></i>Bitácora Auditoría
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+
+        <div class="bg-white px-3 py-2 rounded-3 shadow-sm border d-flex align-items-center gap-2">
+            <span class="text-muted small fw-bold">Total Reportes Activos:</span>
+            <span id="contador-reportes-comentarios" class="badge bg-primary fs-6">{{ reportes_comentarios|length }}</span>
+        </div>
+    </div>
+
+    <!-- Tabla Principal -->
+    <div class="card card-admin-estatica shadow-sm border-0 border-top border-primary border-3 rounded-3">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="comentariosTable" class="table table-hover table-striped table-bordered align-middle w-100">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Producto</th>
+                            <th>Autor del Comentario</th>
+                            <th>Comentario Reportado</th>
+                            <th>Motivo de Denuncia</th>
+                            <th>Denunciante</th>
+                            <th>Fecha</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reporte in reportes_comentarios %}
+                        <tr id="reporte-com-row-{{ reporte.id }}">
+                            <td class="fw-bold">#{{ reporte.id }}</td>
+                            <td>
+                                <a href="{% url 'detalle_producto' producto_id=reporte.comentario.producto.id %}" target="_blank" class="fw-bold text-decoration-none">
+                                    {{ reporte.comentario.producto.nombre }}
+                                </a>
+                            </td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><strong>Nombre:</strong> {{ reporte.comentario.usuario.first_name }} {{ reporte.comentario.usuario.last_name }}</li>
+                                    <li><strong>RUT:</strong> {{ reporte.comentario.usuario.username }}</li>
+                                </ul>
+                            </td>
+                            <td class="texto-celda">
+                                <span class="badge bg-warning text-dark mb-1">
+                                    <i class="bi bi-star-fill me-1"></i>{{ reporte.comentario.valoracion }} / 5
+                                </span>
+                                <div class="p-2 bg-light border rounded fst-italic small">"{{ reporte.comentario.comentario }}"</div>
+                            </td>
+                            <td class="texto-celda">
+                                <div class="p-2 bg-light border rounded small">{{ reporte.motivo }}</div>
+                            </td>
+                            <td>
+                                <ul class="list-unstyled mb-0 small">
+                                    <li><strong>Nombre:</strong> {{ reporte.usuario.first_name }} {{ reporte.usuario.last_name }}</li>
+                                    <li><strong>RUT:</strong> {{ reporte.usuario.username }}</li>
+                                </ul>
+                            </td>
+                            <td data-order="{{ reporte.fecha_creacion|date:'Y-m-d H:i:s' }}">
+                                {{ reporte.fecha_creacion|date:"d/m/Y H:i" }}
+                            </td>
+                            <td>
+                                <div class="d-flex flex-column gap-2">
+                                    <a href="{% url 'detalle_producto' producto_id=reporte.comentario.producto.id %}" target="_blank" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-box-arrow-up-right me-1"></i>Ir al Producto
+                                    </a>
+
+                                    {% if request.user.is_superuser %}
+                                    <a href="{% url 'ver_perfil_admin' reporte.comentario.usuario.id %}" class="btn btn-outline-dark btn-sm">
+                                        <i class="bi bi-person-badge me-1"></i>Revisar Autor
+                                    </a>
+                                    {% endif %}
+
+                                    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteModal{{ reporte.id }}">
+                                        <i class="bi bi-trash me-1"></i>Descartar Reporte
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modales fuera de la tabla y de .card -->
+{% for reporte in reportes_comentarios %}
+<div class="modal fade" id="deleteModal{{ reporte.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger fw-bold"><i class="bi bi-trash me-2"></i>Descartar Reporte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                ¿Estás seguro de que deseas eliminar el reporte sobre el comentario en <strong>{{ reporte.comentario.producto.nombre }}</strong>?
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="{% url 'eliminar_reporte_comentario' reporte.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger fw-bold">Sí, eliminar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Contenedor para Notificaciones Toast -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1090;" id="toast-container"></div>
+
+<script>
+    $(document).ready(function () {
+        const esSuperuser = {{ request.user.is_superuser|yesno:"true,false" }};
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        const dtComentarios = $('#comentariosTable').DataTable({
+            "language": {
+                "lengthMenu": "Mostrar _MENU_ registros",
+                "zeroRecords": "No se encontraron reportes coincidentes",
+                "emptyTable": "No hay comentarios reportados actualmente.",
+                "info": "Mostrando _START_ a _END_ de _TOTAL_ reportes",
+                "infoEmpty": "Mostrando 0 a 0 de 0 reportes",
+                "infoFiltered": "(filtrado de _MAX_ totales)",
+                "search": "Buscar:",
+                "paginate": { "first": "Primero", "last": "Último", "next": "Siguiente", "previous": "Anterior" }
+            },
+            "order": [[6, "desc"]],
+            "stateSave": true
+        });
+
+        function actualizarContador() {
+            $('#contador-reportes-comentarios').text(dtComentarios.rows().count());
+        }
+
+        function mostrarToastGeneral(titulo, subtitulo, detalle, enlaceUrl, colorHeader) {
+            const toastId = `toast-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            const toastHTML = `
+                <div id="${toastId}" class="toast shadow-lg border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="7500">
+                    <div class="toast-header ${colorHeader}">
+                        <i class="bi bi-bell-fill me-2"></i>
+                        <strong class="me-auto">${escapeHtml(titulo)}</strong>
+                        <small>Ahora</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="toast-body bg-white">
+                        <p class="mb-1 small"><strong>${escapeHtml(subtitulo)}</strong></p>
+                        <p class="mb-2 small text-muted text-truncate">${escapeHtml(detalle)}</p>
+                        <div class="pt-2 border-top text-end">
+                            <a href="${enlaceUrl}" class="btn btn-sm btn-outline-dark py-0 px-2" onclick="$(this).closest('.toast').toast('hide');">
+                                Ver detalle
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `;
+            $('#toast-container').append(toastHTML);
+            const toastElem = document.getElementById(toastId);
+            const bsToast = new bootstrap.Toast(toastElem);
+            bsToast.show();
+            toastElem.addEventListener('hidden.bs.toast', () => toastElem.remove());
+        }
+
+        // Conexión WebSocket en tiempo real
+        const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const socket = new WebSocket(`${wsScheme}://${window.location.host}/ws/admin/reportes/`);
+
+        socket.onopen = function () {
+            $('#ws-status')
+                .removeClass('bg-secondary bg-danger')
+                .addClass('bg-success')
+                .html('<i class="bi bi-wifi me-1"></i>Tiempo real activo');
+        };
+
+        socket.onclose = function () {
+            $('#ws-status')
+                .removeClass('bg-success bg-secondary')
+                .addClass('bg-danger')
+                .html('<i class="bi bi-wifi-off me-1"></i>Desconectado');
+        };
+
+        socket.onmessage = function (e) {
+            const data = JSON.parse(e.data);
+
+            if (data.tipo === 'NUEVO_REPORTE') {
+                const r = data.reporte;
+                const categoria = data.categoria || 'MENSAJE';
+
+                if (categoria === 'COMENTARIO') {
+                    const csrfToken = getCookie('csrftoken') || '';
+                    const btnPerfilAutor = esSuperuser
+                        ? `<a href="/administracion/usuarios/perfil/${r.autor_id}/" class="btn btn-outline-dark btn-sm"><i class="bi bi-person-badge me-1"></i>Revisar Autor</a>`
+                        : '';
+
+                    const comentarioHtml = `
+                        <span class="badge bg-warning text-dark mb-1"><i class="bi bi-star-fill me-1"></i>${escapeHtml(String(r.comentario_valoracion))} / 5</span>
+                        <div class="p-2 bg-light border rounded fst-italic small">"${escapeHtml(r.comentario_texto)}"</div>`;
+
+                    const accionesHtml = `
+                        <div class="d-flex flex-column gap-2">
+                            <a href="/producto/${r.producto_id}/" target="_blank" class="btn btn-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>Ir al Producto</a>
+                            ${btnPerfilAutor}
+                            <form method="post" action="/reporte/comentario/eliminar/${r.id}/" onsubmit="return confirm('¿Descartar este reporte de comentario?');">
+                                <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm w-100"><i class="bi bi-trash me-1"></i>Descartar Reporte</button>
+                            </form>
+                        </div>`;
+
+                    const rowNode = dtComentarios.row.add([
+                        `#${r.id}`,
+                        `<a href="/producto/${r.producto_id}/" target="_blank" class="fw-bold text-decoration-none">${escapeHtml(r.producto_nombre)}</a>`,
+                        `<ul class="list-unstyled mb-0 small"><li><strong>Nombre:</strong> ${escapeHtml(r.autor_name)}</li><li><strong>RUT:</strong> ${escapeHtml(r.autor_username)}</li></ul>`,
+                        comentarioHtml,
+                        `<div class="p-2 bg-light border rounded small">${escapeHtml(r.motivo)}</div>`,
+                        `<ul class="list-unstyled mb-0 small"><li><strong>Nombre:</strong> ${escapeHtml(r.reporter_name)}</li><li><strong>RUT:</strong> ${escapeHtml(r.reporter_username)}</li></ul>`,
+                        { display: r.fecha_display, '@data-order': r.fecha_iso },
+                        accionesHtml
+                    ]).draw(false).node();
+
+                    $(rowNode).attr('id', `reporte-com-row-${r.id}`);
+                    $(rowNode).find('td').eq(0).addClass('fw-bold');
+                    $(rowNode).find('td').eq(3).addClass('texto-celda');
+                    $(rowNode).find('td').eq(4).addClass('texto-celda');
+                    actualizarContador();
+
+                    mostrarToastGeneral(
+                        'Nuevo Reporte de Comentario',
+                        `En: ${r.producto_nombre} (por ${r.reporter_name})`,
+                        r.motivo,
+                        `#reporte-com-row-${r.id}`,
+                        'bg-primary text-white'
+                    );
+                } else if (categoria === 'PRODUCTO') {
+                    mostrarToastGeneral(
+                        'Nuevo Reporte de Producto',
+                        `${r.producto_nombre}`,
+                        r.motivo,
+                        "{% url 'lista_reportes' %}",
+                        'bg-warning text-dark'
+                    );
+                } else {
+                    mostrarToastGeneral(
+                        `Nuevo Reporte de Mensaje (${r.tipo_alerta || 'ALERTA'})`,
+                        `Reportado por: ${r.reporter_name}`,
+                        r.reason,
+                        "{% url 'lista_reportes_mensajes' %}",
+                        r.tipo_alerta === 'ROJA' ? 'bg-danger text-white' : 'bg-warning text-dark'
+                    );
+                }
+            }
+
+            if (data.tipo === 'REPORTE_RESUELTO' && data.categoria === 'COMENTARIO') {
+                const fila = dtComentarios.row(`#reporte-com-row-${data.reporte_id}`);
+                if (fila.any()) {
+                    fila.remove().draw(false);
+                    actualizarContador();
+                }
+            }
+        };
+    });
+</script>
+
+{% endblock %}
